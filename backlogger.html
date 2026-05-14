@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BackLogger</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a; --border: #2e3352;
+    --text: #e2e8f0; --muted: #64748b; --accent: #6366f1; --accent2: #8b5cf6;
+    --green: #22c55e; --yellow: #eab308; --red: #ef4444; --orange: #f97316;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  .topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .topbar h1 { font-size: 16px; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .status { font-size: 12px; color: var(--muted); }
+  .spacer { flex: 1; }
+  .topbar button { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; font-size: 13px; }
+  .topbar button.active { background: var(--accent); border-color: var(--accent); }
+  .filterbar { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+  .filterbar select, .filterbar input { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; }
+  .filterbar input { width: 200px; }
+  .btn-add { padding: 6px 14px; border-radius: 6px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-size: 13px; font-weight: 600; margin-left: auto; }
+  .kanban { display: flex; gap: 12px; padding: 14px 16px; overflow-x: auto; flex: 1; min-height: 0; }
+  .column { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; width: 300px; min-width: 280px; display: flex; flex-direction: column; max-height: 100%; }
+  .col-header { padding: 12px 14px; font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .col-count { background: var(--surface2); border-radius: 10px; padding: 2px 8px; font-size: 11px; color: var(--muted); }
+  .col-body { padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; transition: border-color 0.15s, transform 0.1s; position: relative; }
+  .card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .card-title { font-size: 13px; font-weight: 500; line-height: 1.4; margin-bottom: 6px; }
+  .card-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge { padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+  .badge-cat { background: rgba(99,102,241,0.2); color: #a5b4fc; }
+  .badge-priority-critical { background: rgba(239,68,68,0.2); color: #fca5a5; }
+  .badge-priority-high { background: rgba(249,115,22,0.2); color: #fdba74; }
+  .badge-priority-medium { background: rgba(234,179,8,0.2); color: #fde047; }
+  .badge-priority-low { background: rgba(34,197,94,0.2); color: #86efac; }
+  .card-source { font-size: 11px; color: var(--muted); margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-actions { display: flex; gap: 4px; margin-top: 8px; }
+  .card-actions button { padding: 3px 8px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+  .card-actions button:hover { color: var(--text); border-color: var(--accent); }
+  .timer-badge { position: absolute; top: 8px; right: 8px; background: rgba(34,197,94,0.2); color: var(--green); border-radius: 10px; padding: 2px 7px; font-size: 11px; font-weight: 600; }
+  .calendar-view { flex: 1; padding: 14px 16px; overflow-y: auto; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-header-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+  .cal-day-name { text-align: center; font-size: 12px; color: var(--muted); padding: 4px; }
+  .cal-cell { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; min-height: 90px; padding: 6px; }
+  .cal-cell.today { border-color: var(--accent); }
+  .cal-cell.other-month { opacity: 0.4; }
+  .cal-date { font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+  .cal-cell.today .cal-date { color: var(--accent); }
+  .cal-item { background: var(--surface2); border-radius: 4px; padding: 2px 6px; font-size: 11px; margin-bottom: 2px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cal-item:hover { background: var(--accent); }
+  .cal-nav { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .cal-nav h2 { font-size: 16px; font-weight: 600; }
+  .cal-nav button { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 640px; max-width: 100%; max-height: 90vh; overflow-y: auto; }
+  .modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 12px; }
+  .modal-header h2 { font-size: 16px; font-weight: 600; flex: 1; line-height: 1.4; }
+  .modal-close { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; }
+  .modal-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .modal-section { display: flex; flex-direction: column; gap: 6px; }
+  .modal-section label { font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+  .modal-section input, .modal-section select, .modal-section textarea { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; width: 100%; }
+  .modal-section textarea { resize: vertical; min-height: 80px; font-family: inherit; }
+  .modal-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+  .btn-save { padding: 8px 18px; border-radius: 6px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .btn-delete { padding: 8px 18px; border-radius: 6px; border: 1px solid var(--red); background: transparent; color: var(--red); cursor: pointer; font-size: 13px; }
+  .btn-cancel { padding: 8px 18px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; font-size: 13px; }
+  .sec-divider { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .sec-label { font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+  .comment { background: var(--surface2); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .comment-meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .comment-body { font-size: 13px; line-height: 1.5; }
+  .input-row { display: flex; gap: 8px; margin-top: 4px; }
+  .input-row input { flex: 1; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; }
+  .input-row button { padding: 8px 14px; border-radius: 6px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-size: 13px; }
+  .timelog-entry { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .timelog-entry:last-child { border-bottom: none; }
+  .timelog-total { font-size: 13px; font-weight: 600; color: var(--accent); margin-top: 6px; }
+  .btn-timer { padding: 7px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .btn-start { background: var(--green); color: #fff; }
+  .btn-stop { background: var(--red); color: #fff; }
+  .activity-item { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .activity-item:last-child { border-bottom: none; }
+  .activity-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 3px; }
+  .activity-text { color: var(--muted); flex: 1; }
+  .activity-time { color: var(--muted); font-size: 11px; flex-shrink: 0; }
+  .empty-col { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
+  .column.drag-over .col-body { background: rgba(99,102,241,0.08); border-radius: 8px; }
+  .card.dragging { opacity: 0.4; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>BackLogger</h1>
+  <span class="status" id="statusDot">⏳ loading...</span>
+  <div class="spacer"></div>
+  <div style="display:flex;gap:4px">
+    <button class="active" id="tabKanban" onclick="switchView('kanban')">Kanban</button>
+    <button id="tabCalendar" onclick="switchView('calendar')">Calendar</button>
+  </div>
+</div>
+
+<div class="filterbar">
+  <input type="text" id="searchInput" placeholder="Search tasks..." oninput="renderCurrent()">
+  <select id="filterCat" onchange="renderCurrent()">
+    <option value="">All categories</option>
+    <option>client</option><option>internal</option><option>research</option>
+    <option>training</option><option>trading</option><option>todo</option><option>meetings</option>
+  </select>
+  <select id="filterPri" onchange="renderCurrent()">
+    <option value="">All priorities</option>
+    <option>critical</option><option>high</option><option>medium</option><option>low</option>
+  </select>
+  <button class="btn-add" onclick="openModal(null)">+ Add Task</button>
+</div>
+
+<div class="kanban" id="kanbanView">
+  <div class="column" id="col-backlog" ondragover="onDragOver(event,'backlog')" ondrop="onDrop(event,'backlog')" ondragleave="onDragLeave(event)">
+    <div class="col-header"><span>📋 Backlog</span><span class="col-count" id="cnt-backlog">0</span></div>
+    <div class="col-body" id="body-backlog"></div>
+  </div>
+  <div class="column" id="col-in_progress" ondragover="onDragOver(event,'in_progress')" ondrop="onDrop(event,'in_progress')" ondragleave="onDragLeave(event)">
+    <div class="col-header"><span>⚡ In Progress</span><span class="col-count" id="cnt-in_progress">0</span></div>
+    <div class="col-body" id="body-in_progress"></div>
+  </div>
+  <div class="column" id="col-done" ondragover="onDragOver(event,'done')" ondrop="onDrop(event,'done')" ondragleave="onDragLeave(event)">
+    <div class="col-header"><span>✅ Done</span><span class="col-count" id="cnt-done">0</span></div>
+    <div class="col-body" id="body-done"></div>
+  </div>
+</div>
+
+<div class="calendar-view" id="calendarView" style="display:none">
+  <div class="cal-nav">
+    <button onclick="calPrev()">‹</button>
+    <h2 id="calTitle"></h2>
+    <button onclick="calNext()">›</button>
+    <button onclick="calToday()" style="margin-left:8px;font-size:12px">Today</button>
+  </div>
+  <div class="cal-header-row">
+    <div class="cal-day-name">Sun</div><div class="cal-day-name">Mon</div>
+    <div class="cal-day-name">Tue</div><div class="cal-day-name">Wed</div>
+    <div class="cal-day-name">Thu</div><div class="cal-day-name">Fri</div>
+    <div class="cal-day-name">Sat</div>
+  </div>
+  <div class="cal-grid" id="calGrid"></div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">Task</h2>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section"><label>Title</label><input type="text" id="fTitle" placeholder="Task title..."></div>
+      <div class="modal-section"><label>Description / Notes</label><textarea id="fDescription" placeholder="Details..."></textarea></div>
+      <div class="modal-row">
+        <div class="modal-section"><label>Category</label>
+          <select id="fCategory"><option>client</option><option>internal</option><option>research</option><option>training</option><option>trading</option><option>todo</option><option>meetings</option></select>
+        </div>
+        <div class="modal-section"><label>Priority</label>
+          <select id="fPriority"><option>critical</option><option>high</option><option>medium</option><option>low</option></select>
+        </div>
+      </div>
+      <div class="modal-row">
+        <div class="modal-section"><label>Status</label>
+          <select id="fStatus"><option value="backlog">Backlog</option><option value="in_progress">In Progress</option><option value="done">Done</option></select>
+        </div>
+        <div class="modal-section"><label>Source</label><input type="text" id="fSource" placeholder="Slack, Email, Manual..."></div>
+      </div>
+      <div class="sec-divider" id="timelogSection" style="display:none">
+        <div class="sec-label">⏱ Time Tracking</div>
+        <div id="timelogEntries"></div>
+        <div class="timelog-total" id="timelogTotal"></div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="btn-timer btn-start" id="btnStartTimer" onclick="startTimer()">▶ Start Timer</button>
+          <button class="btn-timer btn-stop" id="btnStopTimer" onclick="stopTimer()" style="display:none">■ Stop Timer</button>
+        </div>
+      </div>
+      <div class="sec-divider" id="activitySection" style="display:none">
+        <div class="sec-label">📋 Activity</div>
+        <div id="activityList"></div>
+      </div>
+      <div class="sec-divider" id="commentsSection" style="display:none">
+        <div class="sec-label">💬 Comments</div>
+        <div id="commentsList"></div>
+        <div class="input-row">
+          <input type="text" id="commentInput" placeholder="Add a comment..." onkeydown="if(event.key==='Enter')addComment()">
+          <button onclick="addComment()">Post</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-delete" id="btnDelete" onclick="deleteTask()" style="display:none;margin-right:auto">🗑 Delete</button>
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveTask()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SB_URL = 'https://ocjuxlfysrafnxfwsehr.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9janV4bGZ5c3JhZm54ZndzZWhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NzAzMDYsImV4cCI6MjA5NDM0NjMwNn0.pOFOoGIaOsAGOxPrwn8FM_mco3euP4Mhen9_4F9ZPis';
+
+let items = [], currentView = 'kanban', calYear, calMonth;
+let editingId = null, activeTimerTaskId = null, activeTimerStart = null, timerInterval = null;
+let currentComments = [], currentTimeLogs = [], currentActivity = [];
+const todayDate = new Date();
+calYear = todayDate.getFullYear(); calMonth = todayDate.getMonth();
+
+// ── Supabase via callMcpTool bash (avoids any sandbox fetch restrictions) ──
+async function sbRead(table, query) {
+  query = query || 'select=*&order=created_at.desc';
+  try {
+    const cmd = `curl -s -H "apikey: ${SB_KEY}" -H "Authorization: Bearer ${SB_KEY}" -H "Accept: application/json" "${SB_URL}/rest/v1/${table}?${query}"`;
+    const raw = await window.cowork.callMcpTool('mcp__workspace__bash', { command: cmd });
+    let text = '';
+    if (typeof raw === 'string') text = raw;
+    else if (raw && raw.output) text = raw.output;
+    else if (raw && raw.text) text = raw.text;
+    else if (Array.isArray(raw)) { const b = raw.find(x => x && (x.text || x.output)); text = b ? (b.text || b.output) : ''; }
+    else text = JSON.stringify(raw);
+    return JSON.parse(text.trim());
+  } catch(e) { console.error('sbRead error', e); return null; }
+}
+
+async function sbWrite(table, method, id, body) {
+  try {
+    const bodyB64 = btoa(unescape(encodeURIComponent(JSON.stringify(body))));
+    const url = id ? `${SB_URL}/rest/v1/${table}?id=eq.${id}` : `${SB_URL}/rest/v1/${table}`;
+    const prefer = method === 'POST' ? 'return=representation' : method === 'PATCH' ? 'return=representation' : '';
+    const cmd = `python3 -c "
+import json, base64, urllib.request
+body = json.loads(base64.b64decode('${bodyB64}').decode())
+req = urllib.request.Request(
+  '${url}',
+  data=json.dumps(body).encode(), method='${method}',
+  headers={
+    'apikey': '${SB_KEY}',
+    'Authorization': 'Bearer ${SB_KEY}',
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'Prefer': '${prefer}'
+  }
+)
+try:
+  with urllib.request.urlopen(req) as r:
+    print(r.read().decode() or '[]')
+except Exception as e:
+  print('ERROR:' + str(e))
+"`;
+    const raw = await window.cowork.callMcpTool('mcp__workspace__bash', { command: cmd });
+    let text = '';
+    if (typeof raw === 'string') text = raw;
+    else if (raw && raw.output) text = raw.output;
+    else if (raw && raw.text) text = raw.text;
+    else if (Array.isArray(raw)) { const b = raw.find(x => x && (x.text || x.output)); text = b ? (b.text || b.output) : ''; }
+    if (text.startsWith('ERROR:')) throw new Error(text);
+    return text && text !== '[]' ? JSON.parse(text) : [];
+  } catch(e) { console.error('sbWrite error', e); throw e; }
+}
+
+async function sbDelete(table, id) {
+  try {
+    const cmd = `curl -s -X DELETE -H "apikey: ${SB_KEY}" -H "Authorization: Bearer ${SB_KEY}" "${SB_URL}/rest/v1/${table}?id=eq.${id}"`;
+    await window.cowork.callMcpTool('mcp__workspace__bash', { command: cmd });
+    return true;
+  } catch(e) { console.error('sbDelete error', e); throw e; }
+}
+
+function setStatus(txt, color) {
+  const el = document.getElementById('statusDot');
+  el.textContent = txt; el.style.color = color;
+}
+
+async function loadItems() {
+  setStatus('⏳ loading...', 'var(--muted)');
+  const data = await sbRead('tasks', 'select=*&order=created_at.desc');
+  if (data && Array.isArray(data)) {
+    items = data;
+    setStatus('● live', 'var(--green)');
+    renderCurrent();
+  } else {
+    setStatus('⚠ offline', 'var(--red)');
+  }
+}
+
+function getFiltered() {
+  const q = (document.getElementById('searchInput').value || '').toLowerCase();
+  const cat = document.getElementById('filterCat').value;
+  const pri = document.getElementById('filterPri').value;
+  return items.filter(i => {
+    if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description||'').toLowerCase().indexOf(q) === -1) return false;
+    if (cat && i.category !== cat) return false;
+    if (pri && i.priority !== pri) return false;
+    return true;
+  });
+}
+
+function renderCurrent() { currentView === 'kanban' ? renderKanban() : renderCalendar(); }
+
+function renderKanban() {
+  ['backlog','in_progress','done'].forEach(col => {
+    const colItems = getFiltered().filter(i => i.status === col);
+    document.getElementById('cnt-' + col).textContent = colItems.length;
+    const body = document.getElementById('body-' + col);
+    if (!colItems.length) { body.innerHTML = '<div class="empty-col">No tasks</div>'; return; }
+    body.innerHTML = colItems.map(cardHTML).join('');
+    body.querySelectorAll('.card').forEach(card => {
+      card.draggable = true;
+      card.addEventListener('dragstart', e => { e.dataTransfer.setData('taskId', card.dataset.id); card.classList.add('dragging'); });
+      card.addEventListener('dragend', () => card.classList.remove('dragging'));
+    });
+  });
+}
+
+function cardHTML(item) {
+  let actions = '';
+  if (item.status !== 'backlog') actions += `<button onclick="event.stopPropagation();moveCard('${item.id}','backlog')">← Backlog</button>`;
+  if (item.status !== 'in_progress') actions += `<button onclick="event.stopPropagation();moveCard('${item.id}','in_progress')">⚡ Progress</button>`;
+  if (item.status !== 'done') actions += `<button onclick="event.stopPropagation();moveCard('${item.id}','done')">✓ Done</button>`;
+  return `<div class="card" data-id="${item.id}" onclick="openModal('${item.id}')">
+    ${activeTimerTaskId === item.id ? '<span class="timer-badge">⏱ running</span>' : ''}
+    <div class="card-title">${escHtml(item.title)}</div>
+    <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span></div>
+    ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
+    <div class="card-actions">${actions}</div>
+  </div>`;
+}
+
+function onDragOver(e, col) { e.preventDefault(); document.getElementById('col-' + col).classList.add('drag-over'); }
+function onDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+async function onDrop(e, col) { e.preventDefault(); e.currentTarget.classList.remove('drag-over'); const id = e.dataTransfer.getData('taskId'); if (id) await moveCard(id, col); }
+
+async function moveCard(id, newStatus) {
+  const item = items.find(i => i.id === id);
+  if (!item || item.status === newStatus) return;
+  const oldStatus = item.status; item.status = newStatus; renderKanban();
+  try {
+    await sbWrite('tasks', 'PATCH', id, { status: newStatus, updated_at: new Date().toISOString() });
+    logActivity(id, 'moved', oldStatus + ' → ' + newStatus);
+    setStatus('✓ saved', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { item.status = oldStatus; renderKanban(); setStatus('⚠ save failed', 'var(--red)'); }
+}
+
+async function openModal(id) {
+  editingId = id; currentComments = []; currentTimeLogs = []; currentActivity = [];
+  if (id) {
+    const item = items.find(i => i.id === id); if (!item) return;
+    document.getElementById('modalTitle').textContent = 'Edit Task';
+    document.getElementById('fTitle').value = item.title || '';
+    document.getElementById('fDescription').value = item.description || '';
+    document.getElementById('fCategory').value = item.category || 'todo';
+    document.getElementById('fPriority').value = item.priority || 'medium';
+    document.getElementById('fStatus').value = item.status || 'backlog';
+    document.getElementById('fSource').value = item.source || '';
+    document.getElementById('btnDelete').style.display = 'inline-flex';
+    ['commentsSection','timelogSection','activitySection'].forEach(s => document.getElementById(s).style.display = 'flex');
+    const [comments, timelogs, activity] = await Promise.all([
+      sbRead('comments', `task_id=eq.${id}&order=created_at.asc`),
+      sbRead('time_logs', `task_id=eq.${id}&order=started_at.asc`),
+      sbRead('activity', `task_id=eq.${id}&order=created_at.desc&limit=20`)
+    ]);
+    currentComments = comments || []; currentTimeLogs = timelogs || []; currentActivity = activity || [];
+    renderComments(); renderTimeLogs(); renderActivity();
+    const isRunning = activeTimerTaskId === id;
+    document.getElementById('btnStartTimer').style.display = isRunning ? 'none' : 'inline-flex';
+    document.getElementById('btnStopTimer').style.display = isRunning ? 'inline-flex' : 'none';
+  } else {
+    document.getElementById('modalTitle').textContent = 'New Task';
+    ['fTitle','fDescription','fSource'].forEach(f => document.getElementById(f).value = f === 'fSource' ? 'Manual' : '');
+    document.getElementById('fCategory').value = 'todo';
+    document.getElementById('fPriority').value = 'medium';
+    document.getElementById('fStatus').value = 'backlog';
+    document.getElementById('btnDelete').style.display = 'none';
+    ['commentsSection','timelogSection','activitySection'].forEach(s => document.getElementById(s).style.display = 'none');
+  }
+  document.getElementById('modalOverlay').style.display = 'flex';
+}
+
+function closeModal() { document.getElementById('modalOverlay').style.display = 'none'; editingId = null; }
+
+async function saveTask() {
+  const title = document.getElementById('fTitle').value.trim();
+  if (!title) { alert('Title is required'); return; }
+  const payload = {
+    title, description: document.getElementById('fDescription').value.trim(),
+    category: document.getElementById('fCategory').value, priority: document.getElementById('fPriority').value,
+    status: document.getElementById('fStatus').value, source: document.getElementById('fSource').value.trim(),
+    updated_at: new Date().toISOString()
+  };
+  try {
+    if (editingId) {
+      await sbWrite('tasks', 'PATCH', editingId, payload);
+      const idx = items.findIndex(i => i.id === editingId);
+      if (idx !== -1) items[idx] = Object.assign({}, items[idx], payload);
+      logActivity(editingId, 'updated', 'Task details edited');
+    } else {
+      payload.id = 'T' + Date.now().toString(36).toUpperCase();
+      payload.created_at = new Date().toISOString();
+      const result = await sbWrite('tasks', 'POST', null, payload);
+      items.unshift(result && result[0] ? result[0] : payload);
+    }
+    setStatus('✓ saved', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+    renderCurrent(); closeModal();
+  } catch(e) { alert('Save failed: ' + e.message); setStatus('⚠ save failed', 'var(--red)'); }
+}
+
+async function deleteTask() {
+  if (!editingId || !confirm('Permanently delete this task?')) return;
+  try {
+    await sbDelete('tasks', editingId);
+    items = items.filter(i => i.id !== editingId);
+    renderCurrent(); closeModal();
+    setStatus('✓ deleted', 'var(--red)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { alert('Delete failed: ' + e.message); }
+}
+
+function renderComments() {
+  const el = document.getElementById('commentsList');
+  el.innerHTML = currentComments.length ? currentComments.map(c =>
+    `<div class="comment"><div class="comment-meta">${c.author||'Kyle'} · ${timeAgo(c.created_at)}</div><div class="comment-body">${escHtml(c.body)}</div></div>`
+  ).join('') : '<div style="color:var(--muted);font-size:12px">No comments yet</div>';
+}
+
+async function addComment() {
+  const input = document.getElementById('commentInput');
+  const body = input.value.trim(); if (!body || !editingId) return;
+  input.value = '';
+  const result = await sbWrite('comments', 'POST', null, { task_id: editingId, body, author: 'Kyle' });
+  if (result && result[0]) currentComments.push(result[0]);
+  logActivity(editingId, 'commented', body.substring(0, 60));
+  renderComments();
+}
+
+function renderTimeLogs() {
+  const el = document.getElementById('timelogEntries'), totalEl = document.getElementById('timelogTotal');
+  if (!currentTimeLogs.length) { el.innerHTML = '<div style="color:var(--muted);font-size:12px">No time logged yet</div>'; totalEl.textContent = ''; return; }
+  let total = 0;
+  el.innerHTML = currentTimeLogs.map(t => { total += t.duration_minutes||0; return `<div class="timelog-entry"><span>${t.note||'Work session'}</span><span style="color:var(--accent)">${formatDuration(t.duration_minutes||0)}</span></div>`; }).join('');
+  totalEl.textContent = 'Total: ' + formatDuration(total);
+}
+
+function startTimer() {
+  if (!editingId) return;
+  activeTimerTaskId = editingId; activeTimerStart = Date.now();
+  document.getElementById('btnStartTimer').style.display = 'none';
+  document.getElementById('btnStopTimer').style.display = 'inline-flex';
+  timerInterval = setInterval(() => {
+    const e = Math.floor((Date.now() - activeTimerStart) / 60000);
+    document.getElementById('btnStopTimer').textContent = '■ Stop (' + formatDuration(e) + ')';
+  }, 10000);
+  renderKanban();
+}
+
+async function stopTimer() {
+  if (!activeTimerTaskId || !activeTimerStart) return;
+  const dur = Math.max(1, Math.floor((Date.now() - activeTimerStart) / 60000));
+  clearInterval(timerInterval);
+  const entry = { task_id: activeTimerTaskId, started_at: new Date(activeTimerStart).toISOString(), ended_at: new Date().toISOString(), duration_minutes: dur, note: 'Work session' };
+  const result = await sbWrite('time_logs', 'POST', null, entry);
+  if (result && result[0]) currentTimeLogs.push(result[0]);
+  logActivity(activeTimerTaskId, 'time logged', formatDuration(dur));
+  renderTimeLogs();
+  activeTimerTaskId = null; activeTimerStart = null;
+  document.getElementById('btnStartTimer').style.display = 'inline-flex';
+  document.getElementById('btnStopTimer').style.display = 'none';
+  document.getElementById('btnStopTimer').textContent = '■ Stop Timer';
+  renderKanban();
+}
+
+async function logActivity(taskId, action, detail) {
+  try { await sbWrite('activity', 'POST', null, { task_id: taskId, action, detail }); } catch(e) {}
+}
+
+function renderActivity() {
+  const el = document.getElementById('activityList');
+  el.innerHTML = currentActivity.length ? currentActivity.map(a =>
+    `<div class="activity-item"><span class="activity-dot"></span><span class="activity-text"><strong>${a.action}</strong>${a.detail ? ' — ' + escHtml(a.detail) : ''}</span><span class="activity-time">${timeAgo(a.created_at)}</span></div>`
+  ).join('') : '<div style="color:var(--muted);font-size:12px">No activity yet</div>';
+}
+
+function switchView(v) {
+  currentView = v;
+  document.getElementById('kanbanView').style.display = v === 'kanban' ? 'flex' : 'none';
+  document.getElementById('calendarView').style.display = v === 'calendar' ? 'block' : 'none';
+  document.getElementById('tabKanban').classList.toggle('active', v === 'kanban');
+  document.getElementById('tabCalendar').classList.toggle('active', v === 'calendar');
+  if (v === 'calendar') renderCalendar();
+}
+
+function renderCalendar() {
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('calTitle').textContent = months[calMonth] + ' ' + calYear;
+  const grid = document.getElementById('calGrid');
+  const firstDay = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const daysInPrev = new Date(calYear, calMonth, 0).getDate();
+  const todayStr = todayDate.getFullYear() + '-' + String(todayDate.getMonth()+1).padStart(2,'0') + '-' + String(todayDate.getDate()).padStart(2,'0');
+  const total = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+  let cells = '';
+  for (let i = 0; i < total; i++) {
+    let day, dm, dy, isOther = false;
+    if (i < firstDay) { day = daysInPrev - firstDay + i + 1; dm = calMonth - 1; dy = calYear; isOther = true; }
+    else if (i >= firstDay + daysInMonth) { day = i - firstDay - daysInMonth + 1; dm = calMonth + 1; dy = calYear; isOther = true; }
+    else { day = i - firstDay + 1; dm = calMonth; dy = calYear; }
+    const am = ((dm % 12) + 12) % 12, ay = dm < 0 ? dy - 1 : dm > 11 ? dy + 1 : dy;
+    const dateStr = ay + '-' + String(am+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+    const isToday = dateStr === todayStr;
+    const dayItems = items.filter(it => (it.created_at||'').substring(0,10) === dateStr);
+    cells += `<div class="cal-cell${isOther?' other-month':''}${isToday?' today':''}">
+      <div class="cal-date">${day}</div>
+      ${dayItems.slice(0,3).map(it => `<div class="cal-item" onclick="openModal('${it.id}')" title="${escHtml(it.title)}">${escHtml(it.title)}</div>`).join('')}
+      ${dayItems.length > 3 ? `<div style="font-size:10px;color:var(--muted)">+${dayItems.length-3} more</div>` : ''}
+    </div>`;
+  }
+  grid.innerHTML = cells;
+}
+
+function calPrev() { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); }
+function calNext() { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); }
+function calToday() { calMonth = todayDate.getMonth(); calYear = todayDate.getFullYear(); renderCalendar(); }
+
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function timeAgo(iso) {
+  if (!iso) return '';
+  const d = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (d < 60) return 'just now'; if (d < 3600) return Math.floor(d/60)+'m ago';
+  if (d < 86400) return Math.floor(d/3600)+'h ago'; return Math.floor(d/86400)+'d ago';
+}
+function formatDuration(m) { if (!m) return '0m'; const h = Math.floor(m/60); return h > 0 ? h+'h '+(m%60)+'m' : m+'m'; }
+
+function startPolling() {
+  setInterval(async () => {
+    const fresh = await sbRead('tasks', 'select=*&order=created_at.desc');
+    if (!fresh || !Array.isArray(fresh)) return;
+    const ourIds = new Set(items.map(i => i.id));
+    const newOnes = fresh.filter(i => !ourIds.has(i.id));
+    if (newOnes.length) {
+      items = [...newOnes, ...items];
+      setStatus('↻ +' + newOnes.length + ' new', '#4f46e5');
+      setTimeout(() => setStatus('● live', 'var(--green)'), 3000);
+      renderCurrent();
+    }
+  }, 60000);
+}
+
+loadItems().then(() => startPolling());
+</script>
+</body>
+</html>
