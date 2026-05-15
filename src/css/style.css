@@ -126,6 +126,8 @@ details[open] .expand-toggle::before { content: '▾ '; }
 .deadline-orange { background: rgba(249,115,22,0.2); color: #fdba74; }
 .deadline-red { background: rgba(239,68,68,0.2); color: #fca5a5; }
 .card-overdue { border-color: var(--orange) !important; }
+#col-done .card { opacity: 0.6; }
+#col-done .card:hover { opacity: 0.85; }
 .cal-item-overdue { background: rgba(249,115,22,0.25); color: #fdba74; }
 .cal-item-future { background: rgba(34,197,94,0.15); color: #86efac; }
 .cal-week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
