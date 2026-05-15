@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BackLogger — Time Report</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body { overflow: auto; }
+  .report-container { padding: 20px; max-width: 1000px; margin: 0 auto; }
+  .report-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .report-controls input[type="date"] { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; }
+  .report-controls button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; font-size: 13px; }
+  .report-controls button.active { background: var(--accent); border-color: var(--accent); }
+  .report-summary { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .summary-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; flex: 1; min-width: 140px; }
+  .summary-card .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .summary-card .value { font-size: 24px; font-weight: 700; color: var(--accent); }
+  .report-table { width: 100%; border-collapse: collapse; }
+  .report-table th { text-align: left; padding: 10px 12px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
+  .report-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .report-table tr:hover td { background: var(--surface2); }
+  .report-table .task-title { font-weight: 500; }
+  .report-table .time-val { color: var(--accent); font-weight: 600; }
+  .report-table .timestamp { color: var(--muted); font-size: 12px; }
+  .logged-toggle { width: 36px; height: 20px; border-radius: 10px; border: none; cursor: pointer; position: relative; transition: background 0.2s; }
+  .logged-toggle.on { background: var(--green); }
+  .logged-toggle.off { background: var(--border); }
+  .logged-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform 0.2s; }
+  .logged-toggle.on::after { transform: translateX(16px); }
+  .day-header { padding: 12px 0 6px; font-size: 13px; font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); }
+  .day-header .day-total { float: right; color: var(--accent); font-weight: 600; }
+  .empty-report { text-align: center; padding: 60px 20px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>BackLogger</h1>
+  <span class="status" id="statusDot">⏳ loading...</span>
+  <div class="spacer"></div>
+  <div style="display:flex;gap:4px">
+    <a href="index.html" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;text-decoration:none;display:flex;align-items:center">← Board</a>
+    <button class="active">⏱ Report</button>
+  </div>
+</div>
+
+<div class="report-container">
+  <div class="report-controls">
+    <button class="active" id="btnThisWeek" onclick="setWeek('this')">This Week</button>
+    <button id="btnLastWeek" onclick="setWeek('last')">Last Week</button>
+    <span style="color:var(--muted);font-size:12px">|</span>
+    <label style="font-size:12px;color:var(--muted)">From</label>
+    <input type="date" id="dateFrom" onchange="loadReport()">
+    <label style="font-size:12px;color:var(--muted)">To</label>
+    <input type="date" id="dateTo" onchange="loadReport()">
+  </div>
+
+  <div class="report-summary">
+    <div class="summary-card"><div class="label">Total Time</div><div class="value" id="totalTime">0h</div></div>
+    <div class="summary-card"><div class="label">Entries</div><div class="value" id="totalEntries">0</div></div>
+    <div class="summary-card"><div class="label">Logged</div><div class="value" id="totalLogged">0h</div></div>
+    <div class="summary-card"><div class="label">Unlogged</div><div class="value" id="totalUnlogged">0h</div></div>
+  </div>
+
+  <div id="reportBody"></div>
+</div>
+
+<script>
+const SB_URL = 'https://ocjuxlfysrafnxfwsehr.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9janV4bGZ5c3JhZm54ZndzZWhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NzAzMDYsImV4cCI6MjA5NDM0NjMwNn0.pOFOoGIaOsAGOxPrwn8FM_mco3euP4Mhen9_4F9ZPis';
+
+let timeLogs = [], tasks = [];
+
+async function sbRead(table, query) {
+  query = query || 'select=*';
+  try {
+    const res = await fetch(`${SB_URL}/rest/v1/${table}?${query}`, {
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Accept': 'application/json' }
+    });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return await res.json();
+  } catch(e) { console.error('sbRead error', e); return null; }
+}
+
+async function sbPatch(table, id, body) {
+  try {
+    const res = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return await res.json();
+  } catch(e) { console.error('sbPatch error', e); return null; }
+}
+
+function setStatus(txt, color) {
+  document.getElementById('statusDot').textContent = txt;
+  document.getElementById('statusDot').style.color = color;
+}
+
+function getMonday(d) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(date.setDate(diff));
+}
+
+function formatDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function setWeek(which) {
+  const today = new Date();
+  let monday = getMonday(today);
+  if (which === 'last') monday.setDate(monday.getDate() - 7);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  document.getElementById('dateFrom').value = formatDate(monday);
+  document.getElementById('dateTo').value = formatDate(sunday);
+  document.getElementById('btnThisWeek').classList.toggle('active', which === 'this');
+  document.getElementById('btnLastWeek').classList.toggle('active', which === 'last');
+  loadReport();
+}
+
+async function loadReport() {
+  setStatus('⏳ loading...', 'var(--muted)');
+  const from = document.getElementById('dateFrom').value;
+  const to = document.getElementById('dateTo').value;
+  if (!from || !to) return;
+
+  const toEnd = to + 'T23:59:59';
+  const [logs, taskData] = await Promise.all([
+    sbRead('time_logs', `select=*&created_at=gte.${from}&created_at=lte.${toEnd}&order=created_at.desc`),
+    sbRead('tasks', 'select=id,title,category')
+  ]);
+
+  if (!logs || !taskData) { setStatus('⚠ offline', 'var(--red)'); return; }
+  timeLogs = logs;
+  tasks = taskData;
+  setStatus('● live', 'var(--green)');
+  renderReport();
+}
+
+function renderReport() {
+  const taskMap = {};
+  tasks.forEach(t => taskMap[t.id] = t);
+
+  let totalMin = 0, loggedMin = 0, unloggedMin = 0;
+  timeLogs.forEach(l => {
+    const m = l.duration_minutes || 0;
+    totalMin += m;
+    if (l.logged) loggedMin += m; else unloggedMin += m;
+  });
+
+  document.getElementById('totalTime').textContent = formatDuration(totalMin);
+  document.getElementById('totalEntries').textContent = timeLogs.length;
+  document.getElementById('totalLogged').textContent = formatDuration(loggedMin);
+  document.getElementById('totalUnlogged').textContent = formatDuration(unloggedMin);
+
+  if (!timeLogs.length) {
+    document.getElementById('reportBody').innerHTML = '<div class="empty-report">No time entries for this period</div>';
+    return;
+  }
+
+  // Group by day
+  const days = {};
+  timeLogs.forEach(l => {
+    const day = (l.created_at || '').substring(0, 10);
+    if (!days[day]) days[day] = [];
+    days[day].push(l);
+  });
+
+  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  let html = '';
+
+  Object.keys(days).sort().reverse().forEach(day => {
+    const entries = days[day];
+    const dayTotal = entries.reduce((s, e) => s + (e.duration_minutes||0), 0);
+    const d = new Date(day + 'T12:00:00');
+    const dayLabel = dayNames[d.getDay()] + ', ' + d.toLocaleDateString('en-ZA', {day:'numeric',month:'short',year:'numeric'});
+
+    html += `<div class="day-header">${dayLabel}<span class="day-total">${formatDuration(dayTotal)}</span></div>`;
+    html += '<table class="report-table"><thead><tr><th>Task</th><th>Category</th><th>Duration</th><th>Time</th><th>Logged</th></tr></thead><tbody>';
+
+    entries.forEach(entry => {
+      const task = taskMap[entry.task_id] || { title: 'Unknown task', category: '' };
+      const time = entry.created_at ? new Date(entry.created_at).toLocaleTimeString('en-ZA', {hour:'2-digit',minute:'2-digit'}) : '';
+      const loggedState = entry.logged ? 'on' : 'off';
+      html += `<tr>
+        <td class="task-title">${escHtml(task.title)}</td>
+        <td><span class="badge badge-cat">${task.category||''}</span></td>
+        <td class="time-val">${formatDuration(entry.duration_minutes||0)}</td>
+        <td class="timestamp">${time}</td>
+        <td><button class="logged-toggle ${loggedState}" onclick="toggleLogged('${entry.id}', ${!entry.logged})" title="${entry.logged ? 'Mark as unlogged' : 'Mark as logged'}"></button></td>
+      </tr>`;
+    });
+
+    html += '</tbody></table>';
+  });
+
+  document.getElementById('reportBody').innerHTML = html;
+}
+
+async function toggleLogged(id, newState) {
+  const result = await sbPatch('time_logs', id, { logged: newState });
+  if (result) {
+    const idx = timeLogs.findIndex(l => l.id === id);
+    if (idx !== -1) timeLogs[idx].logged = newState;
+    renderReport();
+  }
+}
+
+function formatDuration(m) { if (!m) return '0m'; const h = Math.floor(m/60); return h > 0 ? h+'h '+(m%60)+'m' : m+'m'; }
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// Init: default to this week
+setWeek('this');
+</script>
+</body>
+</html>

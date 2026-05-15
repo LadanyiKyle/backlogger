@@ -2,8 +2,10 @@ const SB_URL = 'https://ocjuxlfysrafnxfwsehr.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9janV4bGZ5c3JhZm54ZndzZWhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NzAzMDYsImV4cCI6MjA5NDM0NjMwNn0.pOFOoGIaOsAGOxPrwn8FM_mco3euP4Mhen9_4F9ZPis';
 
 let items = [], currentView = 'kanban', calYear, calMonth;
-let editingId = null, activeTimerTaskId = null, activeTimerStart = null, timerInterval = null;
+let editingId = null;
 let currentComments = [], currentTimeLogs = [], currentActivity = [];
+let latestComments = {};
+let currentAttachments = [];
 const todayDate = new Date();
 calYear = todayDate.getFullYear(); calMonth = todayDate.getMonth();
 
@@ -51,9 +53,19 @@ function setStatus(txt, color) {
 
 async function loadItems() {
   setStatus('⏳ loading...', 'var(--muted)');
-  const data = await sbRead('tasks', 'select=*&order=created_at.desc');
+  const [data, comments] = await Promise.all([
+    sbRead('tasks', 'select=*&order=created_at.desc'),
+    sbRead('comments', 'select=task_id,body,created_at&order=created_at.desc')
+  ]);
   if (data && Array.isArray(data)) {
     items = data;
+    // Build map of latest comment per task
+    latestComments = {};
+    if (comments && Array.isArray(comments)) {
+      comments.forEach(c => {
+        if (!latestComments[c.task_id]) latestComments[c.task_id] = c.body;
+      });
+    }
     setStatus('● live', 'var(--green)');
     renderCurrent();
   } else {
@@ -76,30 +88,58 @@ function getFiltered() {
 function renderCurrent() { currentView === 'kanban' ? renderKanban() : renderCalendar(); }
 
 function renderKanban() {
+  const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
   ['backlog','in_progress','done'].forEach(col => {
-    const colItems = getFiltered().filter(i => i.status === col);
+    let colItems = getFiltered().filter(i => i.status === col);
+    // Sort backlog & in_progress by priority; done stays in move order
+    if (col !== 'done') {
+      colItems.sort((a, b) => (priorityOrder[a.priority] ?? 4) - (priorityOrder[b.priority] ?? 4));
+    }
     document.getElementById('cnt-' + col).textContent = colItems.length;
     const body = document.getElementById('body-' + col);
     if (!colItems.length) { body.innerHTML = '<div class="empty-col">No tasks</div>'; return; }
     body.innerHTML = colItems.map(cardHTML).join('');
     body.querySelectorAll('.card').forEach(card => {
       card.draggable = true;
-      card.addEventListener('dragstart', e => { e.dataTransfer.setData('taskId', card.dataset.id); card.classList.add('dragging'); });
+      card.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('taskId', card.dataset.id);
+        card.classList.add('dragging');
+      });
       card.addEventListener('dragend', () => card.classList.remove('dragging'));
     });
   });
 }
+
+// Enable reorder within columns (set up once)
+document.addEventListener('DOMContentLoaded', () => {
+  ['backlog','in_progress','done'].forEach(col => {
+    const body = document.getElementById('body-' + col);
+    body.addEventListener('dragover', e => {
+      e.preventDefault();
+      const dragging = body.querySelector('.dragging');
+      if (!dragging) return;
+      const siblings = [...body.querySelectorAll('.card:not(.dragging)')];
+      const next = siblings.find(s => {
+        const rect = s.getBoundingClientRect();
+        return e.clientY < rect.top + rect.height / 2;
+      });
+      if (next) body.insertBefore(dragging, next);
+      else body.appendChild(dragging);
+    });
+  });
+});
 
 function cardHTML(item) {
   let actions = '';
   if (item.status !== 'backlog') actions += `<button onclick="event.stopPropagation();moveCard('${item.id}','backlog')">← Backlog</button>`;
   if (item.status !== 'in_progress') actions += `<button onclick="event.stopPropagation();moveCard('${item.id}','in_progress')">⚡ Progress</button>`;
   if (item.status !== 'done') actions += `<button onclick="event.stopPropagation();moveCard('${item.id}','done')">✓ Done</button>`;
+  actions += `<button class="card-delete-btn" onclick="event.stopPropagation();deleteCardDirect('${item.id}')">🗑</button>`;
   return `<div class="card" data-id="${item.id}" onclick="openModal('${item.id}')">
-    ${activeTimerTaskId === item.id ? '<span class="timer-badge">⏱ running</span>' : ''}
     <div class="card-title">${escHtml(item.title)}</div>
     <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span></div>
     ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
+    ${latestComments[item.id] ? `<div class="card-comment">💬 ${escHtml(latestComments[item.id])}</div>` : ''}
     <div class="card-actions">${actions}</div>
   </div>`;
 }
@@ -107,6 +147,8 @@ function cardHTML(item) {
 function onDragOver(e, col) { e.preventDefault(); document.getElementById('col-' + col).classList.add('drag-over'); }
 function onDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
 async function onDrop(e, col) { e.preventDefault(); e.currentTarget.classList.remove('drag-over'); const id = e.dataTransfer.getData('taskId'); if (id) await moveCard(id, col); }
+
+let pendingTimeTaskId = null;
 
 async function moveCard(id, newStatus) {
   const item = items.find(i => i.id === id);
@@ -116,7 +158,38 @@ async function moveCard(id, newStatus) {
     await sbWrite('tasks', 'PATCH', id, { status: newStatus, updated_at: new Date().toISOString() });
     logActivity(id, 'moved', oldStatus + ' → ' + newStatus);
     setStatus('✓ saved', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+    // Prompt for time when moving from in_progress to done
+    if (oldStatus === 'in_progress' && newStatus === 'done') {
+      pendingTimeTaskId = id;
+      document.getElementById('timePromptOverlay').style.display = 'flex';
+    }
   } catch(e) { item.status = oldStatus; renderKanban(); setStatus('⚠ save failed', 'var(--red)'); }
+}
+
+async function logTimeAndClose(minutes) {
+  if (!pendingTimeTaskId) return;
+  const now = new Date().toISOString();
+  const entry = { task_id: pendingTimeTaskId, duration_minutes: minutes, logged: false, created_at: now, started_at: now, ended_at: now };
+  try {
+    await sbWrite('time_logs', 'POST', null, entry);
+    logActivity(pendingTimeTaskId, 'time logged', formatDuration(minutes));
+    setStatus('✓ +' + minutes + 'm', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { console.error('Time log failed', e); }
+  pendingTimeTaskId = null;
+  document.getElementById('timePromptOverlay').style.display = 'none';
+}
+
+function logTimePromptCustom() {
+  const input = document.getElementById('timePromptCustom');
+  const minutes = parseInt(input.value);
+  if (!minutes || minutes < 1) return;
+  logTimeAndClose(minutes);
+  input.value = '';
+}
+
+function skipTimePrompt() {
+  pendingTimeTaskId = null;
+  document.getElementById('timePromptOverlay').style.display = 'none';
 }
 
 async function openModal(id) {
@@ -131,17 +204,15 @@ async function openModal(id) {
     document.getElementById('fStatus').value = item.status || 'backlog';
     document.getElementById('fSource').value = item.source || '';
     document.getElementById('btnDelete').style.display = 'inline-flex';
-    ['commentsSection','timelogSection','activitySection'].forEach(s => document.getElementById(s).style.display = 'flex');
-    const [comments, timelogs, activity] = await Promise.all([
+    ['commentsSection','timelogSection','activitySection','attachmentsSection'].forEach(s => document.getElementById(s).style.display = 'flex');
+    const [comments, timelogs, activity, attachments] = await Promise.all([
       sbRead('comments', `task_id=eq.${id}&order=created_at.asc`),
       sbRead('time_logs', `task_id=eq.${id}&order=started_at.asc`),
-      sbRead('activity', `task_id=eq.${id}&order=created_at.desc&limit=20`)
+      sbRead('activity', `task_id=eq.${id}&order=created_at.desc&limit=20`),
+      sbRead('attachments', `task_id=eq.${id}&order=created_at.asc`)
     ]);
-    currentComments = comments || []; currentTimeLogs = timelogs || []; currentActivity = activity || [];
-    renderComments(); renderTimeLogs(); renderActivity();
-    const isRunning = activeTimerTaskId === id;
-    document.getElementById('btnStartTimer').style.display = isRunning ? 'none' : 'inline-flex';
-    document.getElementById('btnStopTimer').style.display = isRunning ? 'inline-flex' : 'none';
+    currentComments = comments || []; currentTimeLogs = timelogs || []; currentActivity = activity || []; currentAttachments = attachments || [];
+    renderComments(); renderTimeLogs(); renderActivity(); renderAttachments();
   } else {
     document.getElementById('modalTitle').textContent = 'New Task';
     ['fTitle','fDescription','fSource'].forEach(f => document.getElementById(f).value = f === 'fSource' ? 'Manual' : '');
@@ -149,7 +220,7 @@ async function openModal(id) {
     document.getElementById('fPriority').value = 'medium';
     document.getElementById('fStatus').value = 'backlog';
     document.getElementById('btnDelete').style.display = 'none';
-    ['commentsSection','timelogSection','activitySection'].forEach(s => document.getElementById(s).style.display = 'none');
+    ['commentsSection','timelogSection','activitySection','attachmentsSection'].forEach(s => document.getElementById(s).style.display = 'none');
   }
   document.getElementById('modalOverlay').style.display = 'flex';
 }
@@ -182,14 +253,46 @@ async function saveTask() {
   } catch(e) { alert('Save failed: ' + e.message); setStatus('⚠ save failed', 'var(--red)'); }
 }
 
+let pendingConfirmCallback = null;
+
+function showConfirm(message, callback) {
+  document.getElementById('confirmMessage').textContent = message;
+  pendingConfirmCallback = callback;
+  document.getElementById('confirmOverlay').style.display = 'flex';
+}
+
+function closeConfirm() {
+  document.getElementById('confirmOverlay').style.display = 'none';
+  pendingConfirmCallback = null;
+}
+
+function confirmCallback() {
+  if (pendingConfirmCallback) pendingConfirmCallback();
+  closeConfirm();
+}
+
 async function deleteTask() {
-  if (!editingId || !confirm('Permanently delete this task?')) return;
-  try {
-    await sbDelete('tasks', editingId);
-    items = items.filter(i => i.id !== editingId);
-    renderCurrent(); closeModal();
-    setStatus('✓ deleted', 'var(--red)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
-  } catch(e) { alert('Delete failed: ' + e.message); }
+  if (!editingId) return;
+  const id = editingId;
+  showConfirm('Are you sure you want to permanently delete this task?', async () => {
+    try {
+      await sbDelete('tasks', id);
+      items = items.filter(i => i.id !== id);
+      renderCurrent(); closeModal();
+      setStatus('✓ deleted', 'var(--red)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+    } catch(e) { alert('Delete failed: ' + e.message); }
+  });
+}
+
+async function deleteCardDirect(id) {
+  showConfirm('Are you sure you want to permanently delete this task?', async () => {
+    try {
+      await sbDelete('tasks', id);
+      items = items.filter(i => i.id !== id);
+      renderCurrent();
+      setStatus('✓ deleted', 'var(--red)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+    } catch(e) { alert('Delete failed: ' + e.message); }
+  });
 }
 
 function renderComments() {
@@ -205,6 +308,7 @@ async function addComment() {
   input.value = '';
   const result = await sbWrite('comments', 'POST', null, { task_id: editingId, body, author: 'Kyle' });
   if (result && result[0]) currentComments.push(result[0]);
+  latestComments[editingId] = body;
   logActivity(editingId, 'commented', body.substring(0, 60));
   renderComments();
 }
@@ -213,36 +317,35 @@ function renderTimeLogs() {
   const el = document.getElementById('timelogEntries'), totalEl = document.getElementById('timelogTotal');
   if (!currentTimeLogs.length) { el.innerHTML = '<div style="color:var(--muted);font-size:12px">No time logged yet</div>'; totalEl.textContent = ''; return; }
   let total = 0;
-  el.innerHTML = currentTimeLogs.map(t => { total += t.duration_minutes||0; return `<div class="timelog-entry"><span>${t.note||'Work session'}</span><span style="color:var(--accent)">${formatDuration(t.duration_minutes||0)}</span></div>`; }).join('');
+  el.innerHTML = currentTimeLogs.map(t => {
+    total += t.duration_minutes||0;
+    const loggedClass = t.logged ? 'timelog-logged' : '';
+    const timestamp = t.created_at ? new Date(t.created_at).toLocaleString('en-ZA', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+    return `<div class="timelog-entry ${loggedClass}"><span>${formatDuration(t.duration_minutes||0)}</span><span style="color:var(--muted);font-size:11px">${timestamp}</span></div>`;
+  }).join('');
   totalEl.textContent = 'Total: ' + formatDuration(total);
 }
 
-function startTimer() {
+async function addQuickTime(minutes) {
   if (!editingId) return;
-  activeTimerTaskId = editingId; activeTimerStart = Date.now();
-  document.getElementById('btnStartTimer').style.display = 'none';
-  document.getElementById('btnStopTimer').style.display = 'inline-flex';
-  timerInterval = setInterval(() => {
-    const e = Math.floor((Date.now() - activeTimerStart) / 60000);
-    document.getElementById('btnStopTimer').textContent = '■ Stop (' + formatDuration(e) + ')';
-  }, 10000);
-  renderKanban();
+  const now = new Date().toISOString();
+  const entry = { task_id: editingId, duration_minutes: minutes, logged: false, created_at: now, started_at: now, ended_at: now };
+  try {
+    const result = await sbWrite('time_logs', 'POST', null, entry);
+    if (result && result[0]) currentTimeLogs.push(result[0]);
+    else currentTimeLogs.push(entry);
+    logActivity(editingId, 'time logged', formatDuration(minutes));
+    renderTimeLogs();
+    setStatus('✓ +' + minutes + 'm', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { alert('Failed to log time: ' + e.message); }
 }
 
-async function stopTimer() {
-  if (!activeTimerTaskId || !activeTimerStart) return;
-  const dur = Math.max(1, Math.floor((Date.now() - activeTimerStart) / 60000));
-  clearInterval(timerInterval);
-  const entry = { task_id: activeTimerTaskId, started_at: new Date(activeTimerStart).toISOString(), ended_at: new Date().toISOString(), duration_minutes: dur, note: 'Work session' };
-  const result = await sbWrite('time_logs', 'POST', null, entry);
-  if (result && result[0]) currentTimeLogs.push(result[0]);
-  logActivity(activeTimerTaskId, 'time logged', formatDuration(dur));
-  renderTimeLogs();
-  activeTimerTaskId = null; activeTimerStart = null;
-  document.getElementById('btnStartTimer').style.display = 'inline-flex';
-  document.getElementById('btnStopTimer').style.display = 'none';
-  document.getElementById('btnStopTimer').textContent = '■ Stop Timer';
-  renderKanban();
+async function addCustomTime() {
+  const input = document.getElementById('customMinutes');
+  const minutes = parseInt(input.value);
+  if (!minutes || minutes < 1) { alert('Enter a valid number of minutes'); return; }
+  await addQuickTime(minutes);
+  input.value = '';
 }
 
 async function logActivity(taskId, action, detail) {
@@ -254,6 +357,43 @@ function renderActivity() {
   el.innerHTML = currentActivity.length ? currentActivity.map(a =>
     `<div class="activity-item"><span class="activity-dot"></span><span class="activity-text"><strong>${a.action}</strong>${a.detail ? ' — ' + escHtml(a.detail) : ''}</span><span class="activity-time">${timeAgo(a.created_at)}</span></div>`
   ).join('') : '<div style="color:var(--muted);font-size:12px">No activity yet</div>';
+}
+
+function renderAttachments() {
+  const el = document.getElementById('attachmentsList');
+  if (!currentAttachments.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:12px">No attachments yet</div>';
+    return;
+  }
+  el.innerHTML = currentAttachments.map(a =>
+    `<div class="attachment-item">
+      <a href="${escHtml(a.url)}" target="_blank" rel="noopener" class="attachment-link">🔗 ${escHtml(a.label || a.url)}</a>
+      <button class="attachment-delete" onclick="deleteAttachment('${a.id}')">×</button>
+    </div>`
+  ).join('');
+}
+
+async function addAttachment() {
+  const labelInput = document.getElementById('attachLabel');
+  const urlInput = document.getElementById('attachUrl');
+  const url = urlInput.value.trim();
+  const label = labelInput.value.trim() || url;
+  if (!url || !editingId) return;
+  try {
+    const result = await sbWrite('attachments', 'POST', null, { task_id: editingId, label, url });
+    if (result && result[0]) currentAttachments.push(result[0]);
+    logActivity(editingId, 'attached', label);
+    renderAttachments();
+    labelInput.value = ''; urlInput.value = '';
+  } catch(e) { alert('Failed to add attachment: ' + e.message); }
+}
+
+async function deleteAttachment(id) {
+  try {
+    await sbDelete('attachments', id);
+    currentAttachments = currentAttachments.filter(a => a.id !== id);
+    renderAttachments();
+  } catch(e) { alert('Failed to delete: ' + e.message); }
 }
 
 function switchView(v) {
