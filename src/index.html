@@ -63,14 +63,27 @@
     <h2 id="calTitle"></h2>
     <button onclick="calNext()">›</button>
     <button onclick="calToday()" style="margin-left:8px;font-size:12px">Today</button>
+    <div class="spacer"></div>
+    <div style="display:flex;gap:4px">
+      <button id="calViewDay" onclick="setCalView('day')">Day</button>
+      <button id="calViewWeek" onclick="setCalView('week')">Week</button>
+      <button id="calViewMonth" class="active" onclick="setCalView('month')">Month</button>
+    </div>
   </div>
-  <div class="cal-header-row">
-    <div class="cal-day-name">Sun</div><div class="cal-day-name">Mon</div>
-    <div class="cal-day-name">Tue</div><div class="cal-day-name">Wed</div>
-    <div class="cal-day-name">Thu</div><div class="cal-day-name">Fri</div>
-    <div class="cal-day-name">Sat</div>
+  <div id="calDayView" style="display:none"></div>
+  <div id="calWeekView" style="display:none">
+    <div class="cal-header-row" id="calWeekHeader"></div>
+    <div class="cal-week-grid" id="calWeekGrid"></div>
   </div>
-  <div class="cal-grid" id="calGrid"></div>
+  <div id="calMonthView">
+    <div class="cal-header-row">
+      <div class="cal-day-name">Sun</div><div class="cal-day-name">Mon</div>
+      <div class="cal-day-name">Tue</div><div class="cal-day-name">Wed</div>
+      <div class="cal-day-name">Thu</div><div class="cal-day-name">Fri</div>
+      <div class="cal-day-name">Sat</div>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+  </div>
 </div>
 
 <div class="modal-overlay" id="modalOverlay" style="display:none" onclick="if(event.target===this)closeModal()">

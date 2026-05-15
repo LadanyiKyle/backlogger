@@ -662,7 +662,36 @@ function switchView(v) {
   if (v === 'calendar') renderCalendar();
 }
 
+let calViewMode = 'month';
+let calDay = todayDate.getDate();
+
+function setCalView(mode) {
+  calViewMode = mode;
+  document.getElementById('calViewDay').classList.toggle('active', mode === 'day');
+  document.getElementById('calViewWeek').classList.toggle('active', mode === 'week');
+  document.getElementById('calViewMonth').classList.toggle('active', mode === 'month');
+  document.getElementById('calDayView').style.display = mode === 'day' ? 'block' : 'none';
+  document.getElementById('calWeekView').style.display = mode === 'week' ? 'block' : 'none';
+  document.getElementById('calMonthView').style.display = mode === 'month' ? 'block' : 'none';
+  renderCalendar();
+}
+
 function renderCalendar() {
+  if (calViewMode === 'month') renderCalMonth();
+  else if (calViewMode === 'week') renderCalWeek();
+  else renderCalDay();
+}
+
+function getTaskDate(it) {
+  return (it.deadline || it.created_at || '').substring(0, 10);
+}
+
+function calItemHTML(it) {
+  const cls = !it.deadline ? 'cal-item' : (new Date(it.deadline).getTime() < Date.now() ? 'cal-item cal-item-overdue' : 'cal-item cal-item-future');
+  return `<div class="${cls}" onclick="openModal('${it.id}')" title="${escHtml(it.title)}">${escHtml(it.title)}</div>`;
+}
+
+function renderCalMonth() {
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   document.getElementById('calTitle').textContent = months[calMonth] + ' ' + calYear;
   const grid = document.getElementById('calGrid');
@@ -680,27 +709,93 @@ function renderCalendar() {
     const am = ((dm % 12) + 12) % 12, ay = dm < 0 ? dy - 1 : dm > 11 ? dy + 1 : dy;
     const dateStr = ay + '-' + String(am+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
     const isToday = dateStr === todayStr;
-    const dayItems = items.filter(it => {
-      if (it.status === 'archived') return false;
-      const taskDate = (it.deadline || it.created_at || '').substring(0,10);
-      return taskDate === dateStr;
-    });
-    const calItemClass = (it) => {
-      if (!it.deadline) return 'cal-item';
-      return new Date(it.deadline).getTime() < Date.now() ? 'cal-item cal-item-overdue' : 'cal-item cal-item-future';
-    };
+    const dayItems = items.filter(it => it.status !== 'archived' && getTaskDate(it) === dateStr);
     cells += `<div class="cal-cell${isOther?' other-month':''}${isToday?' today':''}">
       <div class="cal-date">${day}</div>
-      ${dayItems.slice(0,3).map(it => `<div class="${calItemClass(it)}" onclick="openModal('${it.id}')" title="${escHtml(it.title)}">${escHtml(it.title)}</div>`).join('')}
+      ${dayItems.slice(0,3).map(it => calItemHTML(it)).join('')}
       ${dayItems.length > 3 ? `<div style="font-size:10px;color:var(--muted)">+${dayItems.length-3} more</div>` : ''}
     </div>`;
   }
   grid.innerHTML = cells;
 }
 
-function calPrev() { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); }
-function calNext() { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); }
-function calToday() { calMonth = todayDate.getMonth(); calYear = todayDate.getFullYear(); renderCalendar(); }
+function renderCalWeek() {
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const current = new Date(calYear, calMonth, calDay);
+  const dayOfWeek = current.getDay();
+  const weekStart = new Date(current);
+  weekStart.setDate(current.getDate() - dayOfWeek);
+
+  const todayStr = todayDate.getFullYear() + '-' + String(todayDate.getMonth()+1).padStart(2,'0') + '-' + String(todayDate.getDate()).padStart(2,'0');
+  const startStr = weekStart.toLocaleDateString('en-ZA', {day:'numeric',month:'short'});
+  const endDate = new Date(weekStart); endDate.setDate(weekStart.getDate() + 6);
+  const endStr = endDate.toLocaleDateString('en-ZA', {day:'numeric',month:'short',year:'numeric'});
+  document.getElementById('calTitle').textContent = startStr + ' – ' + endStr;
+
+  let headerHTML = '';
+  let gridHTML = '';
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    const dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    const isToday = dateStr === todayStr;
+    const dayItems = items.filter(it => it.status !== 'archived' && getTaskDate(it) === dateStr);
+    headerHTML += `<div class="cal-day-name${isToday?' cal-day-today':''}">${dayNames[i]} ${d.getDate()}</div>`;
+    gridHTML += `<div class="cal-week-cell${isToday?' today':''}">
+      ${dayItems.map(it => calItemHTML(it)).join('')}
+      ${!dayItems.length ? '<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px 0">—</div>' : ''}
+    </div>`;
+  }
+  document.getElementById('calWeekHeader').innerHTML = headerHTML;
+  document.getElementById('calWeekGrid').innerHTML = gridHTML;
+}
+
+function renderCalDay() {
+  const current = new Date(calYear, calMonth, calDay);
+  const dateStr = current.getFullYear() + '-' + String(current.getMonth()+1).padStart(2,'0') + '-' + String(current.getDate()).padStart(2,'0');
+  const dayName = current.toLocaleDateString('en-ZA', {weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  document.getElementById('calTitle').textContent = dayName;
+
+  const dayItems = items.filter(it => it.status !== 'archived' && getTaskDate(it) === dateStr);
+  const el = document.getElementById('calDayView');
+  if (!dayItems.length) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">No tasks for this day</div>';
+    return;
+  }
+  el.innerHTML = dayItems.map(it => {
+    const cls = !it.deadline ? '' : (new Date(it.deadline).getTime() < Date.now() ? ' cal-day-item-overdue' : ' cal-day-item-future');
+    const deadline = it.deadline ? new Date(it.deadline).toLocaleTimeString('en-ZA', {hour:'2-digit',minute:'2-digit'}) : '';
+    return `<div class="cal-day-item${cls}" onclick="openModal('${it.id}')">
+      <div class="cal-day-item-title">${escHtml(it.title)}</div>
+      <div class="cal-day-item-meta">
+        <span class="badge badge-cat">${it.category||''}</span>
+        <span class="badge badge-priority-${it.priority}">${it.priority||''}</span>
+        ${deadline ? `<span style="color:var(--muted);font-size:11px">⏰ ${deadline}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function calPrev() {
+  if (calViewMode === 'month') { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } }
+  else if (calViewMode === 'week') { calDay -= 7; normalizeCalDate(); }
+  else { calDay -= 1; normalizeCalDate(); }
+  renderCalendar();
+}
+function calNext() {
+  if (calViewMode === 'month') { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } }
+  else if (calViewMode === 'week') { calDay += 7; normalizeCalDate(); }
+  else { calDay += 1; normalizeCalDate(); }
+  renderCalendar();
+}
+function calToday() {
+  calYear = todayDate.getFullYear(); calMonth = todayDate.getMonth(); calDay = todayDate.getDate();
+  renderCalendar();
+}
+function normalizeCalDate() {
+  const d = new Date(calYear, calMonth, calDay);
+  calYear = d.getFullYear(); calMonth = d.getMonth(); calDay = d.getDate();
+}
 
 function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function timeAgo(iso) {
