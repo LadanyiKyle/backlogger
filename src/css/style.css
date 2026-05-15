@@ -133,3 +133,66 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .cal-day-item-future { border-left: 3px solid var(--green); }
 .cal-day-item-title { font-size: 14px; font-weight: 500; margin-bottom: 6px; }
 .cal-day-item-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE
+   ═══════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  body { overflow: auto; height: auto; min-height: 100vh; }
+
+  /* Topbar: stack on small screens */
+  .topbar { flex-wrap: wrap; gap: 8px; padding: 8px 12px; }
+  .topbar h1 { font-size: 15px; }
+  .status { font-size: 11px; }
+
+  /* Kanban: vertical stack instead of horizontal scroll */
+  .kanban { flex-direction: column; padding: 10px 12px; overflow-x: visible; overflow-y: auto; gap: 10px; }
+  .column { width: 100%; min-width: unset; max-height: none; }
+  .col-body { max-height: 400px; }
+
+  /* Filter bar */
+  .filterbar { padding: 8px 12px; gap: 6px; }
+  .filterbar input { width: 100%; flex: 1; min-width: 120px; }
+  .filterbar select { flex: 1; min-width: 0; }
+  .btn-add { margin-left: 0; width: 100%; margin-top: 4px; }
+
+  /* Modal: full width on mobile */
+  .modal-overlay { padding: 10px; align-items: flex-start; padding-top: 40px; }
+  .modal { width: 100%; max-height: 85vh; border-radius: 10px; }
+  .modal-header { padding: 12px 14px; }
+  .modal-body { padding: 12px 14px; }
+  .modal-footer { padding: 12px 14px; }
+  .modal-row { grid-template-columns: 1fr; gap: 10px; }
+
+  /* Calendar */
+  .calendar-view { padding: 10px 12px; }
+  .cal-nav { flex-wrap: wrap; gap: 8px; }
+  .cal-nav h2 { font-size: 14px; }
+  .cal-cell { min-height: 60px; padding: 4px; }
+  .cal-date { font-size: 11px; }
+  .cal-item { font-size: 10px; padding: 1px 4px; }
+
+  /* Week view: 2-column on mobile instead of 7 */
+  .cal-week-grid { grid-template-columns: 1fr; }
+  .cal-header-row { grid-template-columns: 1fr; }
+  .cal-week-cell { min-height: 80px; }
+
+  /* Cards: slightly more compact */
+  .card { padding: 8px 10px; }
+  .card-actions { flex-wrap: wrap; }
+  .card-actions button { font-size: 10px; padding: 3px 6px; }
+
+  /* AI chat panel: full width */
+  .ai-chat-panel { width: calc(100vw - 20px); right: 10px; bottom: 78px; max-height: 70vh; }
+  .ai-chat-btn { bottom: 16px; right: 16px; width: 46px; height: 46px; }
+}
+
+@media (max-width: 480px) {
+  .topbar h1 { font-size: 14px; }
+  .topbar button { padding: 5px 8px; font-size: 12px; }
+  .cal-nav h2 { font-size: 13px; width: 100%; text-align: center; }
+  .cal-nav { justify-content: center; }
+  .modal { max-height: 90vh; }
+  .badge { font-size: 10px; padding: 1px 5px; }
+}
