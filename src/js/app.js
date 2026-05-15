@@ -301,6 +301,18 @@ document.addEventListener('DOMContentLoaded', () => {
       else body.appendChild(dragging);
     });
   });
+
+  // Mobile: tap column header to collapse/expand
+  if (window.innerWidth <= 768) {
+    document.querySelectorAll('.col-header').forEach(header => {
+      header.addEventListener('click', () => {
+        header.closest('.column').classList.toggle('collapsed');
+      });
+    });
+    // Start with Done collapsed on mobile
+    const doneCol = document.getElementById('col-done');
+    if (doneCol) doneCol.classList.add('collapsed');
+  }
 });
 
 function cardHTML(item) {

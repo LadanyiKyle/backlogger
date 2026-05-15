@@ -157,7 +157,10 @@ details[open] .expand-toggle::before { content: '▾ '; }
   /* Kanban: vertical stack instead of horizontal scroll */
   .kanban { flex-direction: column; padding: 10px 12px; overflow-x: visible; overflow-y: auto; gap: 10px; }
   .column { width: 100%; min-width: unset; max-height: none; }
-  .col-body { max-height: 400px; }
+  .col-header { cursor: pointer; user-select: none; }
+  .col-header::after { content: '▾'; margin-left: 8px; font-size: 11px; color: var(--muted); }
+  .column.collapsed .col-header::after { content: '▸'; }
+  .column.collapsed .col-body { display: none; }
 
   /* Filter bar */
   .filterbar { padding: 8px 12px; gap: 6px; }
