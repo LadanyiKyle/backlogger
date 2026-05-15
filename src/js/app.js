@@ -89,6 +89,20 @@ function renderCurrent() { currentView === 'kanban' ? renderKanban() : renderCal
 
 function renderKanban() {
   const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+
+  // Render Review column separately (different card actions)
+  const reviewItems = getFiltered().filter(i => i.status === 'review');
+  document.getElementById('cnt-review').textContent = reviewItems.length;
+  const reviewBody = document.getElementById('body-review');
+  if (!reviewItems.length) {
+    reviewBody.innerHTML = '<div class="empty-col">No items to review</div>';
+  } else {
+    reviewBody.innerHTML = reviewItems.map(reviewCardHTML).join('');
+  }
+  // Update badge
+  updateReviewBadge();
+
+  // Render standard columns
   ['backlog','in_progress','done'].forEach(col => {
     let colItems = getFiltered().filter(i => i.status === col);
     // Sort backlog & in_progress by priority; done stays in move order
@@ -110,9 +124,55 @@ function renderKanban() {
   });
 }
 
+function reviewCardHTML(item) {
+  return `<div class="card" data-id="${item.id}" onclick="openModal('${item.id}')">
+    <div class="card-title">${escHtml(item.title)}</div>
+    <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span></div>
+    ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
+    <div class="card-actions">
+      <button class="review-approve-btn" onclick="event.stopPropagation();approveReview('${item.id}')">✓ Approve</button>
+      <button class="review-dismiss-btn" onclick="event.stopPropagation();dismissReview('${item.id}')">✗ Dismiss</button>
+    </div>
+  </div>`;
+}
+
+function updateReviewBadge() {
+  const count = items.filter(i => i.status === 'review').length;
+  const badge = document.getElementById('reviewBadge');
+  if (count > 0) {
+    badge.textContent = count;
+    badge.style.display = 'inline-flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+async function approveReview(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  item.status = 'backlog';
+  renderKanban();
+  try {
+    await sbWrite('tasks', 'PATCH', id, { status: 'backlog', updated_at: new Date().toISOString() });
+    logActivity(id, 'approved', 'Moved from review to backlog');
+    setStatus('✓ approved', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { item.status = 'review'; renderKanban(); setStatus('⚠ save failed', 'var(--red)'); }
+}
+
+async function dismissReview(id) {
+  showConfirm('Dismiss this task? It will be permanently deleted.', async () => {
+    try {
+      await sbDelete('tasks', id);
+      items = items.filter(i => i.id !== id);
+      renderKanban();
+      setStatus('✓ dismissed', 'var(--muted)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+    } catch(e) { alert('Dismiss failed: ' + e.message); }
+  });
+}
+
 // Enable reorder within columns (set up once)
 document.addEventListener('DOMContentLoaded', () => {
-  ['backlog','in_progress','done'].forEach(col => {
+  ['review','backlog','in_progress','done'].forEach(col => {
     const body = document.getElementById('body-' + col);
     body.addEventListener('dragover', e => {
       e.preventDefault();
