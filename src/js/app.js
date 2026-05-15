@@ -583,12 +583,17 @@ function renderTimeLogs() {
   const el = document.getElementById('timelogEntries'), totalEl = document.getElementById('timelogTotal');
   if (!currentTimeLogs.length) { el.innerHTML = '<div style="color:var(--muted);font-size:12px">No time logged yet</div>'; totalEl.textContent = ''; return; }
   let total = 0;
-  el.innerHTML = currentTimeLogs.map(t => {
+  const entries = currentTimeLogs.map(t => {
     total += t.duration_minutes||0;
     const loggedClass = t.logged ? 'timelog-logged' : '';
     const timestamp = t.created_at ? new Date(t.created_at).toLocaleString('en-ZA', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
     return `<div class="timelog-entry ${loggedClass}"><span>${formatDuration(t.duration_minutes||0)}</span><span style="color:var(--muted);font-size:11px">${timestamp}</span></div>`;
-  }).join('');
+  });
+  if (entries.length <= 1) {
+    el.innerHTML = entries.join('');
+  } else {
+    el.innerHTML = entries[0] + `<details class="expand-section"><summary class="expand-toggle">Show ${entries.length - 1} more</summary><div>${entries.slice(1).join('')}</div></details>`;
+  }
   totalEl.textContent = 'Total: ' + formatDuration(total);
 }
 
@@ -620,9 +625,18 @@ async function logActivity(taskId, action, detail) {
 
 function renderActivity() {
   const el = document.getElementById('activityList');
-  el.innerHTML = currentActivity.length ? currentActivity.map(a =>
+  if (!currentActivity.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:12px">No activity yet</div>';
+    return;
+  }
+  const entries = currentActivity.map(a =>
     `<div class="activity-item"><span class="activity-dot"></span><span class="activity-text"><strong>${a.action}</strong>${a.detail ? ' — ' + escHtml(a.detail) : ''}</span><span class="activity-time">${timeAgo(a.created_at)}</span></div>`
-  ).join('') : '<div style="color:var(--muted);font-size:12px">No activity yet</div>';
+  );
+  if (entries.length <= 1) {
+    el.innerHTML = entries.join('');
+  } else {
+    el.innerHTML = entries[0] + `<details class="expand-section"><summary class="expand-toggle">Show ${entries.length - 1} more</summary><div>${entries.slice(1).join('')}</div></details>`;
+  }
 }
 
 function renderAttachments() {

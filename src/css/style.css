@@ -89,6 +89,11 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .activity-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 3px; }
 .activity-text { color: var(--muted); flex: 1; }
 .activity-time { color: var(--muted); font-size: 11px; flex-shrink: 0; }
+.expand-section { margin-top: 4px; }
+.expand-toggle { font-size: 11px; color: var(--accent); cursor: pointer; list-style: none; padding: 4px 0; }
+.expand-toggle::-webkit-details-marker { display: none; }
+.expand-toggle::before { content: '▸ '; }
+details[open] .expand-toggle::before { content: '▾ '; }
 .empty-col { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
 .attachment-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; background: var(--surface2); border-radius: 6px; margin-bottom: 4px; }
 .attachment-link { color: var(--accent); font-size: 13px; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
