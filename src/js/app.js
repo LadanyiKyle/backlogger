@@ -161,13 +161,15 @@ function renderSummaries() {
     const time = s.created_at ? new Date(s.created_at).toLocaleString('en-ZA', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
     const source = s.summary_source || '';
     const scanType = s.scan_type || 'scan';
-    return `<div class="card summary-card">
+    // Truncate content for preview (show first ~100 chars)
+    const preview = (s.content || '').substring(0, 100) + (s.content && s.content.length > 100 ? '...' : '');
+    return `<div class="card summary-card" onclick="expandSummary('${escAttr(s.id)}')">
       <div class="summary-source-title">${escHtml(source)}</div>
       <div class="summary-sub-meta"><span class="badge badge-scan">${escHtml(scanType)}</span> <span style="color:var(--muted);font-size:11px">${time}</span></div>
-      <div class="summary-content">${escHtml(s.content || '')}</div>
+      <div class="summary-content" style="cursor:pointer;color:var(--text);padding:8px;border-radius:6px;background:var(--surface2);min-height:60px;max-height:80px;overflow:hidden">${escHtml(preview)}</div>
       ${s.tasks_added ? `<div class="summary-tasks-count">+${s.tasks_added} tasks added</div>` : ''}
       <div class="card-actions" style="margin-top:8px">
-        <button class="review-approve-btn" onclick="markSummaryRead('${s.id}')">✓ Mark as Read</button>
+        <button class="review-approve-btn" onclick="event.stopPropagation();markSummaryRead('${s.id}')">✓ Mark as Read</button>
         <button class="summary-promote-btn" id="promote-${s.id}" onclick="event.stopPropagation();promoteToTask('${s.id}')">→ Create Task</button>
       </div>
     </div>`;
@@ -605,5 +607,39 @@ function startPolling() {
     }
   }, 60000);
 }
+
+function escAttr(s) { return String(s||'').replace(/'/g,'&#39;').replace(/"/g,'&quot;'); }
+
+function expandSummary(id) {
+  const s = summaries.find(x => x.id === id);
+  if (!s) return;
+  const time = s.created_at ? new Date(s.created_at).toLocaleString('en-ZA', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+  const source = s.summary_source || '';
+  const scanType = s.scan_type || 'scan';
+
+  document.getElementById('summaryExpandTitle').textContent = (source ? source + ' • ' : '') + scanType;
+  document.getElementById('summaryExpandBody').innerHTML = `
+    <div style="margin-bottom:16px">
+      <div style="color:var(--muted);font-size:12px;margin-bottom:8px">${time}</div>
+      <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word">${escHtml(s.content || '')}</div>
+    </div>
+    ${s.tasks_added ? `<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:6px;font-size:13px">✓ <strong>${s.tasks_added} task${s.tasks_added===1?'':'s'} created</strong> from this summary</div>` : ''}
+    <div style="display:flex;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+      <button class="review-approve-btn" style="padding:6px 12px;border-radius:6px;border:1px solid var(--green);background:transparent;cursor:pointer;font-size:12px" onclick="markSummaryRead('${escAttr(s.id)}');closeSummaryExpand()">✓ Mark as Read</button>
+      <button style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px" onclick="promoteToTask('${escAttr(s.id)}')">→ Create Task</button>
+    </div>
+  `;
+  document.getElementById('summaryExpandOverlay').style.display = 'flex';
+}
+
+function closeSummaryExpand() {
+  document.getElementById('summaryExpandOverlay').style.display = 'none';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (document.getElementById('summaryExpandOverlay').style.display === 'flex') closeSummaryExpand();
+  }
+});
 
 loadItems().then(() => startPolling());
