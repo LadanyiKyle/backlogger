@@ -472,6 +472,21 @@ async function setDeadline(days) {
   } catch(e) { alert('Failed to set deadline: ' + e.message); }
 }
 
+async function setDeadlineFromPicker() {
+  if (!editingId) return;
+  const val = document.getElementById('deadlinePicker').value;
+  if (!val) return;
+  const deadline = new Date(val).toISOString();
+  try {
+    await sbWrite('tasks', 'PATCH', editingId, { deadline, updated_at: new Date().toISOString() });
+    const idx = items.findIndex(i => i.id === editingId);
+    if (idx !== -1) items[idx].deadline = deadline;
+    renderDeadlineDisplay(items[idx]);
+    renderCurrent();
+    setStatus('✓ deadline set', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { alert('Failed to set deadline: ' + e.message); }
+}
+
 async function clearDeadline() {
   if (!editingId) return;
   try {

@@ -118,6 +118,7 @@
           <button class="btn-timer btn-time-add" onclick="setDeadline(2)">+2 days</button>
           <button class="btn-timer btn-time-add" onclick="setDeadline(3)">+3 days</button>
           <button class="btn-timer btn-time-add" onclick="setDeadline(7)">+1 week</button>
+          <input type="datetime-local" id="deadlinePicker" onchange="setDeadlineFromPicker()" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;">
           <button class="btn-timer btn-time-add" style="color:var(--red);border-color:var(--red)" onclick="clearDeadline()">✕ Clear</button>
         </div>
       </div>
