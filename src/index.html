@@ -146,10 +146,6 @@
           <button onclick="addAttachment()">Add</button>
         </div>
       </div>
-      <div class="sec-divider" id="activitySection" style="display:none">
-        <div class="sec-label">📋 Activity</div>
-        <div id="activityList"></div>
-      </div>
       <div class="sec-divider" id="commentsSection" style="display:none">
         <div class="sec-label">💬 Comments</div>
         <div id="commentsList"></div>
@@ -157,6 +153,10 @@
           <input type="text" id="commentInput" placeholder="Add a comment..." onkeydown="if(event.key==='Enter')addComment()">
           <button onclick="addComment()">Post</button>
         </div>
+      </div>
+      <div class="sec-divider" id="activitySection" style="display:none">
+        <div class="sec-label">📋 Activity</div>
+        <div id="activityList"></div>
       </div>
     </div>
     <div class="modal-footer">
