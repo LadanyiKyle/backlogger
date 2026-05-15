@@ -7,6 +7,7 @@ let currentComments = [], currentTimeLogs = [], currentActivity = [];
 let latestComments = {};
 let currentAttachments = [];
 let summaries = [];
+let currentTags = [];
 const todayDate = new Date();
 calYear = todayDate.getFullYear(); calMonth = todayDate.getMonth();
 
@@ -72,6 +73,7 @@ async function loadItems() {
     setStatus('● live', 'var(--green)');
     // Auto-archive done tasks older than 7 days
     autoArchiveOldDone();
+    populateTagFilter();
     renderCurrent();
   } else {
     setStatus('⚠ offline', 'var(--red)');
@@ -95,11 +97,13 @@ function getFiltered() {
   const q = (document.getElementById('searchInput').value || '').toLowerCase();
   const cat = document.getElementById('filterCat').value;
   const pri = document.getElementById('filterPri').value;
+  const tag = document.getElementById('filterTag').value;
   return items.filter(i => {
     if (i.status === 'archived') return false;
     if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description||'').toLowerCase().indexOf(q) === -1) return false;
     if (cat && i.category !== cat) return false;
     if (pri && i.priority !== pri) return false;
+    if (tag && !(i.tags || []).includes(tag)) return false;
     return true;
   });
 }
@@ -309,7 +313,7 @@ function cardHTML(item) {
   const overdueClass = isOverdue(item) ? ' card-overdue' : '';
   return `<div class="card${overdueClass}" data-id="${item.id}" onclick="openModal('${item.id}')">
     <div class="card-title">${escHtml(item.title)}</div>
-    <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span>${deadlineBadge}</div>
+    <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span>${deadlineBadge}${(item.tags||[]).map(t => `<span class="badge badge-tag">${escHtml(t)}</span>`).join('')}</div>
     ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
     ${latestComments[item.id] ? `<div class="card-comment">💬 ${escHtml(latestComments[item.id])}</div>` : ''}
     <div class="card-actions">${actions}</div>
@@ -413,6 +417,8 @@ async function openModal(id) {
     document.getElementById('fPriority').value = item.priority || 'medium';
     document.getElementById('fStatus').value = item.status || 'backlog';
     document.getElementById('fSource').value = item.source || '';
+    currentTags = item.tags || [];
+    renderTags();
     document.getElementById('btnDelete').style.display = 'inline-flex';
     ['commentsSection','timelogSection','activitySection','attachmentsSection'].forEach(s => document.getElementById(s).style.display = 'flex');
     renderDeadlineDisplay(item);
@@ -431,6 +437,8 @@ async function openModal(id) {
     document.getElementById('fPriority').value = 'medium';
     document.getElementById('fStatus').value = 'backlog';
     document.getElementById('btnDelete').style.display = 'none';
+    currentTags = [];
+    renderTags();
     ['commentsSection','timelogSection','activitySection','attachmentsSection'].forEach(s => document.getElementById(s).style.display = 'none');
     renderDeadlineDisplay(null);
   }
@@ -500,6 +508,7 @@ async function saveTask() {
     title, description: document.getElementById('fDescription').value.trim(),
     category: document.getElementById('fCategory').value, priority: document.getElementById('fPriority').value,
     status: document.getElementById('fStatus').value, source: document.getElementById('fSource').value.trim(),
+    tags: currentTags,
     updated_at: new Date().toISOString()
   };
   try {
@@ -515,6 +524,7 @@ async function saveTask() {
       items.unshift(result && result[0] ? result[0] : payload);
     }
     setStatus('✓ saved', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+    populateTagFilter();
     renderCurrent(); closeModal();
   } catch(e) { alert('Save failed: ' + e.message); setStatus('⚠ save failed', 'var(--red)'); }
 }
@@ -689,6 +699,35 @@ async function deleteAttachment(id) {
     currentAttachments = currentAttachments.filter(a => a.id !== id);
     renderAttachments();
   } catch(e) { alert('Failed to delete: ' + e.message); }
+}
+
+function renderTags() {
+  const el = document.getElementById('tagsList');
+  el.innerHTML = currentTags.map(t =>
+    `<span class="badge badge-tag">${escHtml(t)} <button onclick="removeTag('${escAttr(t)}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px">×</button></span>`
+  ).join('');
+}
+
+function addTag() {
+  const input = document.getElementById('tagInput');
+  const tag = input.value.trim().toLowerCase();
+  if (!tag || currentTags.includes(tag)) { input.value = ''; return; }
+  currentTags.push(tag);
+  renderTags();
+  input.value = '';
+}
+
+function removeTag(tag) {
+  currentTags = currentTags.filter(t => t !== tag);
+  renderTags();
+}
+
+function populateTagFilter() {
+  const allTags = new Set();
+  items.forEach(i => (i.tags || []).forEach(t => allTags.add(t)));
+  const select = document.getElementById('filterTag');
+  const current = select.value;
+  select.innerHTML = '<option value="">All tags</option>' + [...allTags].sort().map(t => `<option${t===current?' selected':''}>${escHtml(t)}</option>`).join('');
 }
 
 function switchView(v) {

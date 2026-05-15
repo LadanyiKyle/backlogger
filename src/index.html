@@ -31,6 +31,9 @@
     <option value="">All priorities</option>
     <option>critical</option><option>high</option><option>medium</option><option>low</option>
   </select>
+  <select id="filterTag" onchange="renderCurrent()">
+    <option value="">All tags</option>
+  </select>
   <button class="btn-add" onclick="openModal(null)">+ Add Task</button>
 </div>
 
@@ -108,6 +111,14 @@
           <select id="fStatus"><option value="backlog">Backlog</option><option value="in_progress">In Progress</option><option value="done">Done</option></select>
         </div>
         <div class="modal-section"><label>Source</label><input type="text" id="fSource" placeholder="Slack, Email, Manual..."></div>
+      </div>
+      <div class="modal-section">
+        <label>Tags</label>
+        <div id="tagsList" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px"></div>
+        <div class="input-row">
+          <input type="text" id="tagInput" placeholder="Add tag..." onkeydown="if(event.key==='Enter'){event.preventDefault();addTag()}">
+          <button onclick="addTag()">+ Tag</button>
+        </div>
       </div>
       <div class="sec-divider" id="deadlineSection">
         <div class="sec-label">⏰ Deadline</div>
