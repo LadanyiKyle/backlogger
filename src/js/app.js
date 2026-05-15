@@ -6,6 +6,7 @@ let editingId = null;
 let currentComments = [], currentTimeLogs = [], currentActivity = [];
 let latestComments = {};
 let currentAttachments = [];
+let summaries = [];
 const todayDate = new Date();
 calYear = todayDate.getFullYear(); calMonth = todayDate.getMonth();
 
@@ -53,12 +54,14 @@ function setStatus(txt, color) {
 
 async function loadItems() {
   setStatus('⏳ loading...', 'var(--muted)');
-  const [data, comments] = await Promise.all([
+  const [data, comments, summaryData] = await Promise.all([
     sbRead('tasks', 'select=*&order=created_at.desc'),
-    sbRead('comments', 'select=task_id,body,created_at&order=created_at.desc')
+    sbRead('comments', 'select=task_id,body,created_at&order=created_at.desc'),
+    sbRead('summaries', 'select=*&status=eq.unread&order=created_at.desc')
   ]);
   if (data && Array.isArray(data)) {
     items = data;
+    summaries = (summaryData && Array.isArray(summaryData)) ? summaryData : [];
     // Build map of latest comment per task
     latestComments = {};
     if (comments && Array.isArray(comments)) {
@@ -67,10 +70,25 @@ async function loadItems() {
       });
     }
     setStatus('● live', 'var(--green)');
+    // Auto-archive done tasks older than 7 days
+    autoArchiveOldDone();
     renderCurrent();
   } else {
     setStatus('⚠ offline', 'var(--red)');
   }
+}
+
+async function autoArchiveOldDone() {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const toArchive = items.filter(i => i.status === 'done' && i.updated_at && i.updated_at < sevenDaysAgo);
+  for (const item of toArchive) {
+    try {
+      await sbWrite('tasks', 'PATCH', item.id, { status: 'archived', archived_at: new Date().toISOString() });
+      item.status = 'archived';
+      item.archived_at = new Date().toISOString();
+    } catch(e) { console.error('Auto-archive failed for', item.id, e); }
+  }
+  if (toArchive.length) renderCurrent();
 }
 
 function getFiltered() {
@@ -78,6 +96,7 @@ function getFiltered() {
   const cat = document.getElementById('filterCat').value;
   const pri = document.getElementById('filterPri').value;
   return items.filter(i => {
+    if (i.status === 'archived') return false;
     if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description||'').toLowerCase().indexOf(q) === -1) return false;
     if (cat && i.category !== cat) return false;
     if (pri && i.priority !== pri) return false;
@@ -90,17 +109,21 @@ function renderCurrent() { currentView === 'kanban' ? renderKanban() : renderCal
 function renderKanban() {
   const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
 
-  // Render Review column separately (different card actions)
+  // Conditional Review column — hide if empty
   const reviewItems = getFiltered().filter(i => i.status === 'review');
-  document.getElementById('cnt-review').textContent = reviewItems.length;
-  const reviewBody = document.getElementById('body-review');
-  if (!reviewItems.length) {
-    reviewBody.innerHTML = '<div class="empty-col">No items to review</div>';
-  } else {
+  const reviewCol = document.getElementById('col-review');
+  if (reviewItems.length) {
+    reviewCol.style.display = 'flex';
+    document.getElementById('cnt-review').textContent = reviewItems.length;
+    const reviewBody = document.getElementById('body-review');
     reviewBody.innerHTML = reviewItems.map(reviewCardHTML).join('');
+  } else {
+    reviewCol.style.display = 'none';
   }
-  // Update badge
   updateReviewBadge();
+
+  // Render Summaries column
+  renderSummaries();
 
   // Render standard columns
   ['backlog','in_progress','done'].forEach(col => {
@@ -122,6 +145,42 @@ function renderKanban() {
       card.addEventListener('dragend', () => card.classList.remove('dragging'));
     });
   });
+}
+
+function renderSummaries() {
+  const col = document.getElementById('col-summaries');
+  const body = document.getElementById('body-summaries');
+  const cnt = document.getElementById('cnt-summaries');
+  if (!summaries.length) {
+    col.style.display = 'none';
+    return;
+  }
+  col.style.display = 'flex';
+  cnt.textContent = summaries.length;
+  body.innerHTML = summaries.map(s => {
+    const scanBadge = s.scan_type || 'scan';
+    const time = s.created_at ? new Date(s.created_at).toLocaleString('en-ZA', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+    return `<div class="card summary-card">
+      <div class="card-meta" style="margin-bottom:6px">
+        <span class="badge badge-scan">${escHtml(scanBadge)}</span>
+        <span style="font-size:11px;color:var(--muted)">${time}</span>
+      </div>
+      <div class="summary-content">${escHtml(s.content || '')}</div>
+      ${s.tasks_added ? `<div class="summary-tasks-count">+${s.tasks_added} tasks added</div>` : ''}
+      <div class="card-actions" style="margin-top:8px">
+        <button class="review-approve-btn" onclick="markSummaryRead('${s.id}')">✓ Mark as Read</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function markSummaryRead(id) {
+  try {
+    await sbWrite('summaries', 'PATCH', id, { status: 'read', read_at: new Date().toISOString() });
+    summaries = summaries.filter(s => s.id !== id);
+    renderSummaries();
+    setStatus('✓ read', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { alert('Failed to mark as read: ' + e.message); }
 }
 
 function reviewCardHTML(item) {

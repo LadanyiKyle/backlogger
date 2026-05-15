@@ -16,6 +16,7 @@
     <button class="active" id="tabKanban" onclick="switchView('kanban')">Kanban <span class="review-badge" id="reviewBadge" style="display:none"></span></button>
     <button id="tabCalendar" onclick="switchView('calendar')">Calendar</button>
     <a href="timereport.html" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;text-decoration:none;display:flex;align-items:center">⏱ Report</a>
+    <a href="archive.html" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;text-decoration:none;display:flex;align-items:center">🗄 Archive</a>
   </div>
 </div>
 
@@ -49,6 +50,10 @@
   <div class="column" id="col-done" ondragover="onDragOver(event,'done')" ondrop="onDrop(event,'done')" ondragleave="onDragLeave(event)">
     <div class="col-header"><span>✅ Done</span><span class="col-count" id="cnt-done">0</span></div>
     <div class="col-body" id="body-done"></div>
+  </div>
+  <div class="column column-summaries" id="col-summaries" style="display:none">
+    <div class="col-header"><span>📝 Summaries</span><span class="col-count col-count-summaries" id="cnt-summaries">0</span></div>
+    <div class="col-body" id="body-summaries"></div>
   </div>
 </div>
 
