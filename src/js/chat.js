@@ -10,6 +10,43 @@ let chatOpen = false;
 let pendingFileContent = null;
 let pendingFileName = null;
 
+// ── PERSISTENCE ──────────────────────────────────────────────────────────────
+
+function saveChatHistory() {
+  try { localStorage.setItem('backlogger_chat_history', JSON.stringify(chatHistory)); } catch(e) {}
+}
+
+function restoreChatUI() {
+  if (!chatHistory.length) return;
+  const msgs = document.getElementById('aiMessages');
+  if (!msgs) return;
+  // Clear the default welcome message
+  msgs.innerHTML = '';
+  chatHistory.forEach(m => {
+    const div = document.createElement('div');
+    div.className = `ai-message ai-message-${m.role}`;
+    div.innerHTML = `<div class="ai-bubble">${escHtml(m.content)}</div>`;
+    msgs.appendChild(div);
+  });
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// Load persisted history on init
+(function initChatHistory() {
+  const saved = localStorage.getItem('backlogger_chat_history');
+  if (saved) {
+    try {
+      chatHistory = JSON.parse(saved);
+      // Restore UI once DOM is ready
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', restoreChatUI);
+      } else {
+        restoreChatUI();
+      }
+    } catch(e) { chatHistory = []; }
+  }
+})();
+
 // ── UI ───────────────────────────────────────────────────────────────────────
 
 function toggleChat() {
@@ -22,6 +59,7 @@ function toggleChat() {
 
 function clearChat() {
   chatHistory = [];
+  localStorage.removeItem('backlogger_chat_history');
   const msgs = document.getElementById('aiMessages');
   msgs.innerHTML = `<div class="ai-message ai-message-assistant">
     <div class="ai-bubble">Chat cleared. What can I help you with?</div>
@@ -234,6 +272,9 @@ Rules:
 
     // Keep history manageable (last 20 messages)
     if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+
+    // Persist to localStorage
+    saveChatHistory();
 
   } catch(e) {
     removeTyping();
