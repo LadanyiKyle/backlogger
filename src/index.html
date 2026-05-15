@@ -169,16 +169,22 @@
 </div>
 
 <!-- AI CHAT BUTTON -->
-<button class="ai-chat-btn" id="aiChatBtn" onclick="toggleChat()" title="Ask AI">🤖</button>
+<button class="ai-chat-btn" id="aiChatBtn" onclick="toggleChat()" title="Ask Grok">
+  <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" xmlns="http://www.w3.org/2000/svg">
+    <path d="M14.258 3.315C13.194 1.272 10.607.4 8.472 1.418L2.043 4.59C-.09 5.607-.68 8.26.686 10.06l1.434 1.87c.323.42.37.984.12 1.453l-.87 1.633c-1.097 2.058-.22 4.613 1.942 5.548l6.895 2.94c2.163.922 4.618-.14 5.437-2.336l.534-1.43a1.29 1.29 0 0 1 1.168-.84l1.775-.053c2.344-.07 4.14-2.06 3.87-4.392l-.845-7.19c-.27-2.333-2.51-3.924-4.77-3.435l-1.766.39a1.29 1.29 0 0 1-1.352-.503Z"/>
+  </svg>
+</button>
 
 <!-- AI CHAT PANEL -->
 <div class="ai-chat-panel" id="aiChatPanel">
   <div class="ai-chat-header">
     <div style="display:flex;align-items:center;gap:8px">
-      <span style="font-size:16px">🤖</span>
+      <svg viewBox="0 0 24 24" fill="white" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
+        <path d="M14.258 3.315C13.194 1.272 10.607.4 8.472 1.418L2.043 4.59C-.09 5.607-.68 8.26.686 10.06l1.434 1.87c.323.42.37.984.12 1.453l-.87 1.633c-1.097 2.058-.22 4.613 1.942 5.548l6.895 2.94c2.163.922 4.618-.14 5.437-2.336l.534-1.43a1.29 1.29 0 0 1 1.168-.84l1.775-.053c2.344-.07 4.14-2.06 3.87-4.392l-.845-7.19c-.27-2.333-2.51-3.924-4.77-3.435l-1.766.39a1.29 1.29 0 0 1-1.352-.503Z"/>
+      </svg>
       <div>
-        <div style="font-weight:600;font-size:14px">BackLogger AI</div>
-        <div style="font-size:11px;color:var(--muted)">Powered by Grok</div>
+        <div style="font-weight:600;font-size:14px">Grok</div>
+        <div style="font-size:11px;color:var(--muted)">BackLogger AI</div>
       </div>
     </div>
     <div style="display:flex;gap:6px;align-items:center">
@@ -196,7 +202,9 @@
     </div>
   </div>
   <div class="ai-chat-input-area">
-    <textarea id="aiInput" placeholder="Ask anything or say 'Add a task...'" rows="1"
+    <input type="file" id="aiFileInput" accept=".txt,.md,.pdf,.doc,.docx" style="display:none" onchange="handleFileUpload(event)">
+    <button class="ai-attach-btn" onclick="document.getElementById('aiFileInput').click()" title="Upload meeting notes or doc">📎</button>
+    <textarea id="aiInput" placeholder="Ask anything, or upload a doc 📎" rows="1"
       onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"
       oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"></textarea>
     <button class="ai-send-btn" onclick="sendChat()" id="aiSendBtn">↑</button>
@@ -267,6 +275,19 @@
 }
 .ai-send-btn:hover { opacity: 0.9; }
 .ai-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.ai-attach-btn {
+  width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--muted); font-size: 16px; cursor: pointer;
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+}
+.ai-attach-btn:hover { color: var(--text); border-color: var(--accent); }
+.ai-file-pill {
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+  background: rgba(99,102,241,0.15); border-radius: 8px; font-size: 12px; color: #a5b4fc;
+  margin-bottom: 4px;
+}
+.ai-file-pill button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; }
+.ai-file-pill button:hover { color: var(--red); }
 </style>
 
 <script src="js/config.js"></script>

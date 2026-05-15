@@ -7,6 +7,8 @@ const GROK_MODEL = 'grok-3-mini';
 
 let chatHistory = [];
 let chatOpen = false;
+let pendingFileContent = null;
+let pendingFileName = null;
 
 // ── UI ───────────────────────────────────────────────────────────────────────
 
@@ -29,6 +31,75 @@ function clearChat() {
 function sendSuggestion(el) {
   document.getElementById('aiInput').value = el.textContent;
   sendChat();
+}
+
+// ── FILE UPLOAD ──────────────────────────────────────────────────────────────
+
+function handleFileUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  // Reset input so same file can be re-uploaded
+  event.target.value = '';
+
+  const maxSize = 500 * 1024; // 500KB limit for text extraction
+  if (file.size > maxSize && !file.name.endsWith('.pdf')) {
+    appendMessage('assistant', `That file is quite large (${(file.size/1024).toFixed(0)}KB). Try a smaller doc or paste the text directly.`);
+    return;
+  }
+
+  const reader = new FileReader();
+
+  if (file.name.endsWith('.pdf')) {
+    // For PDFs, read as text (basic extraction — works for text-based PDFs)
+    reader.onload = () => {
+      // Extract readable text from PDF binary using a simple regex approach
+      const raw = reader.result;
+      const textMatches = raw.match(/\(([^)]{3,})\)/g);
+      if (textMatches && textMatches.length > 10) {
+        const extracted = textMatches.map(m => m.slice(1,-1)).join(' ').replace(/\\[rn]/g,' ').substring(0, 8000);
+        setFileContext(file.name, extracted);
+      } else {
+        appendMessage('assistant', `I couldn't extract text from this PDF. Try saving it as a .txt file and uploading again.`);
+      }
+    };
+    reader.readAsBinaryString(file);
+  } else {
+    // Plain text, markdown, doc-as-text
+    reader.onload = () => setFileContext(file.name, reader.result);
+    reader.readAsText(file);
+  }
+}
+
+function setFileContext(name, content) {
+  pendingFileName = name;
+  // Truncate to ~8000 chars to stay within token limits
+  pendingFileContent = content.substring(0, 8000);
+
+  // Show file pill in chat
+  const msgs = document.getElementById('aiMessages');
+  const pill = document.createElement('div');
+  pill.className = 'ai-message ai-message-user';
+  pill.id = 'aiFilePill';
+  pill.innerHTML = `<div class="ai-file-pill">
+    📄 <strong>${escHtml(name)}</strong> ready
+    <button onclick="clearFileContext()" title="Remove">×</button>
+  </div>`;
+  msgs.appendChild(pill);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  // Pre-fill input with suggestion
+  const input = document.getElementById('aiInput');
+  input.value = 'Summarise this doc and create tasks from any action items';
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  input.focus();
+}
+
+function clearFileContext() {
+  pendingFileName = null;
+  pendingFileContent = null;
+  const pill = document.getElementById('aiFilePill');
+  if (pill) pill.remove();
 }
 
 function appendMessage(role, content, actionPill) {
@@ -74,8 +145,15 @@ async function sendChat() {
   // Build context from current tasks
   const taskContext = buildTaskContext();
 
+  // Build full message — inject file content if attached
+  let fullUserMsg = userMsg;
+  if (pendingFileContent) {
+    fullUserMsg = `${userMsg}\n\n--- ATTACHED DOCUMENT: ${pendingFileName} ---\n${pendingFileContent}\n--- END DOCUMENT ---`;
+    clearFileContext();
+  }
+
   // Add to history
-  chatHistory.push({ role: 'user', content: userMsg });
+  chatHistory.push({ role: 'user', content: fullUserMsg });
 
   showTyping();
 
@@ -85,7 +163,7 @@ You have access to Kyle's current task board. Here is the current state:
 
 ${taskContext}
 
-You can answer questions about tasks, give summaries, suggest priorities, and CREATE or UPDATE tasks.
+You can answer questions about tasks, give summaries, suggest priorities, CREATE or UPDATE tasks, and process uploaded documents (meeting notes, emails, briefs) to extract action items and create tasks from them.
 
 When you want to perform an action on the board, include a JSON block at the END of your response in this exact format:
 
