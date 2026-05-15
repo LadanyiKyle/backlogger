@@ -128,9 +128,9 @@ function renderKanban() {
   // Render standard columns
   ['backlog','in_progress','done'].forEach(col => {
     let colItems = getFiltered().filter(i => i.status === col);
-    // Sort backlog & in_progress by priority; done stays in move order
+    // Smart sort: priority → deadline status → date
     if (col !== 'done') {
-      colItems.sort((a, b) => (priorityOrder[a.priority] ?? 4) - (priorityOrder[b.priority] ?? 4));
+      colItems.sort(smartSort);
     }
     document.getElementById('cnt-' + col).textContent = colItems.length;
     const body = document.getElementById('body-' + col);
@@ -145,6 +145,29 @@ function renderKanban() {
       card.addEventListener('dragend', () => card.classList.remove('dragging'));
     });
   });
+}
+
+function smartSort(a, b) {
+  const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+  const now = Date.now();
+  // 1. Priority tier
+  const pa = priorityOrder[a.priority] ?? 4;
+  const pb = priorityOrder[b.priority] ?? 4;
+  if (pa !== pb) return pa - pb;
+  // 2. Within same priority: overdue first, then due soon, then no deadline
+  const aDeadline = a.deadline ? new Date(a.deadline).getTime() : null;
+  const bDeadline = b.deadline ? new Date(b.deadline).getTime() : null;
+  const aOverdue = aDeadline && aDeadline < now;
+  const bOverdue = bDeadline && bDeadline < now;
+  if (aOverdue && !bOverdue) return -1;
+  if (!aOverdue && bOverdue) return 1;
+  if (aOverdue && bOverdue) return aDeadline - bDeadline; // oldest overdue first
+  // Both have deadlines (not overdue)
+  if (aDeadline && bDeadline) return aDeadline - bDeadline; // due soonest first
+  if (aDeadline && !bDeadline) return -1;
+  if (!aDeadline && bDeadline) return 1;
+  // Both no deadline: oldest created first
+  return new Date(a.created_at||0).getTime() - new Date(b.created_at||0).getTime();
 }
 
 function renderSummaries() {
@@ -282,13 +305,53 @@ function cardHTML(item) {
   if (item.status !== 'in_progress') actions += `<button onclick="event.stopPropagation();moveCard('${item.id}','in_progress')">⚡ Progress</button>`;
   if (item.status !== 'done') actions += `<button onclick="event.stopPropagation();moveCard('${item.id}','done')">✓ Done</button>`;
   actions += `<button class="card-delete-btn" onclick="event.stopPropagation();deleteCardDirect('${item.id}')">🗑</button>`;
-  return `<div class="card" data-id="${item.id}" onclick="openModal('${item.id}')">
+  const deadlineBadge = getDeadlineBadge(item);
+  const overdueClass = isOverdue(item) ? ' card-overdue' : '';
+  return `<div class="card${overdueClass}" data-id="${item.id}" onclick="openModal('${item.id}')">
     <div class="card-title">${escHtml(item.title)}</div>
-    <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span></div>
+    <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span>${deadlineBadge}</div>
     ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
     ${latestComments[item.id] ? `<div class="card-comment">💬 ${escHtml(latestComments[item.id])}</div>` : ''}
     <div class="card-actions">${actions}</div>
   </div>`;
+}
+
+function isOverdue(item) {
+  return item.deadline && new Date(item.deadline).getTime() < Date.now();
+}
+
+function getDeadlineBadge(item) {
+  if (!item.deadline) return '';
+  const now = Date.now();
+  const dl = new Date(item.deadline).getTime();
+  const diff = dl - now;
+  const hours = diff / (1000 * 60 * 60);
+  let colorClass, text;
+  if (diff <= 0) {
+    colorClass = 'deadline-red';
+    text = '⏰ Overdue';
+  } else if (hours < 6) {
+    colorClass = 'deadline-red';
+    text = '⏰ ' + formatTimeRemaining(diff);
+  } else if (hours < 24) {
+    colorClass = 'deadline-orange';
+    text = '⏰ ' + formatTimeRemaining(diff);
+  } else {
+    colorClass = 'deadline-green';
+    text = '⏰ ' + formatTimeRemaining(diff);
+  }
+  return `<span class="badge ${colorClass}">${text}</span>`;
+}
+
+function formatTimeRemaining(ms) {
+  if (ms <= 0) return 'Overdue';
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  const days = Math.floor(hours / 24);
+  const remainHours = hours % 24;
+  if (days > 0) return days + 'd ' + remainHours + 'h';
+  if (hours > 0) return hours + 'h';
+  const mins = Math.floor(ms / (1000 * 60));
+  return mins + 'm';
 }
 
 function onDragOver(e, col) { e.preventDefault(); document.getElementById('col-' + col).classList.add('drag-over'); }
@@ -352,6 +415,7 @@ async function openModal(id) {
     document.getElementById('fSource').value = item.source || '';
     document.getElementById('btnDelete').style.display = 'inline-flex';
     ['commentsSection','timelogSection','activitySection','attachmentsSection'].forEach(s => document.getElementById(s).style.display = 'flex');
+    renderDeadlineDisplay(item);
     const [comments, timelogs, activity, attachments] = await Promise.all([
       sbRead('comments', `task_id=eq.${id}&order=created_at.asc`),
       sbRead('time_logs', `task_id=eq.${id}&order=started_at.asc`),
@@ -368,11 +432,57 @@ async function openModal(id) {
     document.getElementById('fStatus').value = 'backlog';
     document.getElementById('btnDelete').style.display = 'none';
     ['commentsSection','timelogSection','activitySection','attachmentsSection'].forEach(s => document.getElementById(s).style.display = 'none');
+    renderDeadlineDisplay(null);
   }
   document.getElementById('modalOverlay').style.display = 'flex';
 }
 
 function closeModal() { document.getElementById('modalOverlay').style.display = 'none'; editingId = null; }
+
+function renderDeadlineDisplay(item) {
+  const el = document.getElementById('deadlineDisplay');
+  if (!item || !item.deadline) {
+    el.innerHTML = '<span style="color:var(--muted)">No deadline set</span>';
+    return;
+  }
+  const dl = new Date(item.deadline);
+  const formatted = dl.toLocaleString('en-ZA', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  const remaining = dl.getTime() - Date.now();
+  let remainText, color;
+  if (remaining <= 0) {
+    remainText = 'OVERDUE';
+    color = 'var(--red)';
+  } else {
+    remainText = formatTimeRemaining(remaining) + ' remaining';
+    color = remaining < 6*60*60*1000 ? 'var(--red)' : remaining < 24*60*60*1000 ? 'var(--orange)' : 'var(--green)';
+  }
+  el.innerHTML = `<span>Due: <strong>${formatted}</strong></span> <span style="color:${color};margin-left:8px;font-weight:600">${remainText}</span>`;
+}
+
+async function setDeadline(days) {
+  if (!editingId) return;
+  const deadline = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    await sbWrite('tasks', 'PATCH', editingId, { deadline, updated_at: new Date().toISOString() });
+    const idx = items.findIndex(i => i.id === editingId);
+    if (idx !== -1) items[idx].deadline = deadline;
+    renderDeadlineDisplay(items[idx]);
+    renderCurrent();
+    setStatus('✓ deadline set', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { alert('Failed to set deadline: ' + e.message); }
+}
+
+async function clearDeadline() {
+  if (!editingId) return;
+  try {
+    await sbWrite('tasks', 'PATCH', editingId, { deadline: null, updated_at: new Date().toISOString() });
+    const idx = items.findIndex(i => i.id === editingId);
+    if (idx !== -1) items[idx].deadline = null;
+    renderDeadlineDisplay(null);
+    renderCurrent();
+    setStatus('✓ deadline cleared', 'var(--muted)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { alert('Failed to clear deadline: ' + e.message); }
+}
 
 async function saveTask() {
   const title = document.getElementById('fTitle').value.trim();
@@ -570,10 +680,18 @@ function renderCalendar() {
     const am = ((dm % 12) + 12) % 12, ay = dm < 0 ? dy - 1 : dm > 11 ? dy + 1 : dy;
     const dateStr = ay + '-' + String(am+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
     const isToday = dateStr === todayStr;
-    const dayItems = items.filter(it => (it.created_at||'').substring(0,10) === dateStr);
+    const dayItems = items.filter(it => {
+      if (it.status === 'archived') return false;
+      const taskDate = (it.deadline || it.created_at || '').substring(0,10);
+      return taskDate === dateStr;
+    });
+    const calItemClass = (it) => {
+      if (!it.deadline) return 'cal-item';
+      return new Date(it.deadline).getTime() < Date.now() ? 'cal-item cal-item-overdue' : 'cal-item cal-item-future';
+    };
     cells += `<div class="cal-cell${isOther?' other-month':''}${isToday?' today':''}">
       <div class="cal-date">${day}</div>
-      ${dayItems.slice(0,3).map(it => `<div class="cal-item" onclick="openModal('${it.id}')" title="${escHtml(it.title)}">${escHtml(it.title)}</div>`).join('')}
+      ${dayItems.slice(0,3).map(it => `<div class="${calItemClass(it)}" onclick="openModal('${it.id}')" title="${escHtml(it.title)}">${escHtml(it.title)}</div>`).join('')}
       ${dayItems.length > 3 ? `<div style="font-size:10px;color:var(--muted)">+${dayItems.length-3} more</div>` : ''}
     </div>`;
   }

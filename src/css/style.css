@@ -117,3 +117,9 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .summary-card:hover .summary-promote-btn { opacity: 1; }
 .summary-promote-btn:hover { color: var(--accent) !important; border-color: var(--accent) !important; }
 .badge-scan { background: rgba(139,92,246,0.2); color: #c4b5fd; text-transform: capitalize; }
+.deadline-green { background: rgba(34,197,94,0.2); color: #86efac; }
+.deadline-orange { background: rgba(249,115,22,0.2); color: #fdba74; }
+.deadline-red { background: rgba(239,68,68,0.2); color: #fca5a5; }
+.card-overdue { border-color: var(--orange) !important; }
+.cal-item-overdue { background: rgba(249,115,22,0.25); color: #fdba74; }
+.cal-item-future { background: rgba(34,197,94,0.15); color: #86efac; }
