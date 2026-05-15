@@ -563,9 +563,18 @@ async function deleteCardDirect(id) {
 
 function renderComments() {
   const el = document.getElementById('commentsList');
-  el.innerHTML = currentComments.length ? currentComments.map(c =>
+  if (!currentComments.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:12px">No comments yet</div>';
+    return;
+  }
+  const entries = currentComments.map(c =>
     `<div class="comment"><div class="comment-meta">${c.author||'Kyle'} · ${timeAgo(c.created_at)}</div><div class="comment-body">${escHtml(c.body)}</div></div>`
-  ).join('') : '<div style="color:var(--muted);font-size:12px">No comments yet</div>';
+  );
+  if (entries.length <= 1) {
+    el.innerHTML = entries.join('');
+  } else {
+    el.innerHTML = entries[entries.length - 1] + `<details class="expand-section"><summary class="expand-toggle">Show ${entries.length - 1} more</summary><div>${entries.slice(0, -1).reverse().join('')}</div></details>`;
+  }
 }
 
 async function addComment() {
