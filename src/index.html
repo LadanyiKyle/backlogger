@@ -13,9 +13,10 @@
   <span class="status" id="statusDot">⏳ loading...</span>
   <div class="spacer"></div>
   <div style="display:flex;gap:4px">
-    <button class="active" id="tabKanban" onclick="switchView('kanban')">Kanban</button>
+    <button class="active" id="tabKanban" onclick="switchView('kanban')">Kanban <span class="review-badge" id="reviewBadge" style="display:none"></span></button>
     <button id="tabCalendar" onclick="switchView('calendar')">Calendar</button>
     <a href="timereport.html" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;text-decoration:none;display:flex;align-items:center">⏱ Report</a>
+    <a href="archive.html" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;text-decoration:none;display:flex;align-items:center">🗄 Archive</a>
   </div>
 </div>
 
@@ -34,6 +35,10 @@
 </div>
 
 <div class="kanban" id="kanbanView">
+  <div class="column column-review" id="col-review" ondragover="onDragOver(event,'review')" ondrop="onDrop(event,'review')" ondragleave="onDragLeave(event)">
+    <div class="col-header"><span>👁 Review</span><span class="col-count col-count-review" id="cnt-review">0</span></div>
+    <div class="col-body" id="body-review"></div>
+  </div>
   <div class="column" id="col-backlog" ondragover="onDragOver(event,'backlog')" ondrop="onDrop(event,'backlog')" ondragleave="onDragLeave(event)">
     <div class="col-header"><span>📋 Backlog</span><span class="col-count" id="cnt-backlog">0</span></div>
     <div class="col-body" id="body-backlog"></div>
@@ -45,6 +50,10 @@
   <div class="column" id="col-done" ondragover="onDragOver(event,'done')" ondrop="onDrop(event,'done')" ondragleave="onDragLeave(event)">
     <div class="col-header"><span>✅ Done</span><span class="col-count" id="cnt-done">0</span></div>
     <div class="col-body" id="body-done"></div>
+  </div>
+  <div class="column column-summaries" id="col-summaries" style="display:none">
+    <div class="col-header"><span>📝 Summaries</span><span class="col-count col-count-summaries" id="cnt-summaries">0</span></div>
+    <div class="col-body" id="body-summaries"></div>
   </div>
 </div>
 
@@ -164,6 +173,21 @@
     <div class="modal-footer">
       <button class="btn-cancel" onclick="closeConfirm()">Cancel</button>
       <button class="btn-delete" id="confirmAction" onclick="confirmCallback()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="summaryExpandOverlay" style="display:none" onclick="if(event.target===this)closeSummaryExpand()">
+  <div class="modal" style="width:520px;max-height:70vh">
+    <div class="modal-header">
+      <h2 id="summaryExpandTitle">Summary</h2>
+      <button class="modal-close" onclick="closeSummaryExpand()">×</button>
+    </div>
+    <div class="modal-body" id="summaryExpandBody" style="max-height:calc(70vh - 120px);overflow-y:auto">
+      <!-- Content populated by JS -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeSummaryExpand()">Close</button>
     </div>
   </div>
 </div>

@@ -6,6 +6,7 @@ let editingId = null;
 let currentComments = [], currentTimeLogs = [], currentActivity = [];
 let latestComments = {};
 let currentAttachments = [];
+let summaries = [];
 const todayDate = new Date();
 calYear = todayDate.getFullYear(); calMonth = todayDate.getMonth();
 
@@ -53,12 +54,14 @@ function setStatus(txt, color) {
 
 async function loadItems() {
   setStatus('⏳ loading...', 'var(--muted)');
-  const [data, comments] = await Promise.all([
+  const [data, comments, summaryData] = await Promise.all([
     sbRead('tasks', 'select=*&order=created_at.desc'),
-    sbRead('comments', 'select=task_id,body,created_at&order=created_at.desc')
+    sbRead('comments', 'select=task_id,body,created_at&order=created_at.desc'),
+    sbRead('summaries', 'select=*&order=created_at.desc&status=eq.unread')
   ]);
   if (data && Array.isArray(data)) {
     items = data;
+    summaries = (summaryData && Array.isArray(summaryData)) ? summaryData : [];
     // Build map of latest comment per task
     latestComments = {};
     if (comments && Array.isArray(comments)) {
@@ -67,10 +70,25 @@ async function loadItems() {
       });
     }
     setStatus('● live', 'var(--green)');
+    // Auto-archive done tasks older than 7 days
+    autoArchiveOldDone();
     renderCurrent();
   } else {
     setStatus('⚠ offline', 'var(--red)');
   }
+}
+
+async function autoArchiveOldDone() {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const toArchive = items.filter(i => i.status === 'done' && i.updated_at && i.updated_at < sevenDaysAgo);
+  for (const item of toArchive) {
+    try {
+      await sbWrite('tasks', 'PATCH', item.id, { status: 'archived', archived_at: new Date().toISOString() });
+      item.status = 'archived';
+      item.archived_at = new Date().toISOString();
+    } catch(e) { console.error('Auto-archive failed for', item.id, e); }
+  }
+  if (toArchive.length) renderCurrent();
 }
 
 function getFiltered() {
@@ -78,6 +96,7 @@ function getFiltered() {
   const cat = document.getElementById('filterCat').value;
   const pri = document.getElementById('filterPri').value;
   return items.filter(i => {
+    if (i.status === 'archived') return false;
     if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description||'').toLowerCase().indexOf(q) === -1) return false;
     if (cat && i.category !== cat) return false;
     if (pri && i.priority !== pri) return false;
@@ -89,6 +108,24 @@ function renderCurrent() { currentView === 'kanban' ? renderKanban() : renderCal
 
 function renderKanban() {
   const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+
+  // Conditional Review column — hide if empty
+  const reviewItems = getFiltered().filter(i => i.status === 'review');
+  const reviewCol = document.getElementById('col-review');
+  if (reviewItems.length) {
+    reviewCol.style.display = 'flex';
+    document.getElementById('cnt-review').textContent = reviewItems.length;
+    const reviewBody = document.getElementById('body-review');
+    reviewBody.innerHTML = reviewItems.map(reviewCardHTML).join('');
+  } else {
+    reviewCol.style.display = 'none';
+  }
+  updateReviewBadge();
+
+  // Render Summaries column
+  renderSummaries();
+
+  // Render standard columns
   ['backlog','in_progress','done'].forEach(col => {
     let colItems = getFiltered().filter(i => i.status === col);
     // Sort backlog & in_progress by priority; done stays in move order
@@ -110,9 +147,119 @@ function renderKanban() {
   });
 }
 
+function renderSummaries() {
+  const col = document.getElementById('col-summaries');
+  const body = document.getElementById('body-summaries');
+  const cnt = document.getElementById('cnt-summaries');
+  if (!summaries.length) {
+    col.style.display = 'none';
+    return;
+  }
+  col.style.display = 'flex';
+  cnt.textContent = summaries.length;
+  body.innerHTML = summaries.map(s => {
+    const time = s.created_at ? new Date(s.created_at).toLocaleString('en-ZA', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+    const source = s.summary_source || '';
+    const scanType = s.scan_type || 'scan';
+    // Truncate content for preview (show first ~100 chars)
+    const preview = (s.content || '').substring(0, 100) + (s.content && s.content.length > 100 ? '...' : '');
+    return `<div class="card summary-card" onclick="expandSummary('${escAttr(s.id)}')">
+      <div class="summary-source-title">${escHtml(source)}</div>
+      <div class="summary-sub-meta"><span class="badge badge-scan">${escHtml(scanType)}</span> <span style="color:var(--muted);font-size:11px">${time}</span></div>
+      <div class="summary-content" style="cursor:pointer;color:var(--text);padding:8px;border-radius:6px;background:var(--surface2);min-height:60px;max-height:80px;overflow:hidden">${escHtml(preview)}</div>
+      ${s.tasks_added ? `<div class="summary-tasks-count">+${s.tasks_added} tasks added</div>` : ''}
+      <div class="card-actions" style="margin-top:8px">
+        <button class="review-approve-btn" onclick="event.stopPropagation();markSummaryRead('${s.id}')">✓ Mark as Read</button>
+        <button class="summary-promote-btn" id="promote-${s.id}" onclick="event.stopPropagation();promoteToTask('${s.id}')">→ Create Task</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function markSummaryRead(id) {
+  try {
+    await sbWrite('summaries', 'PATCH', id, { status: 'read', read_at: new Date().toISOString() });
+    summaries = summaries.filter(s => s.id !== id);
+    renderSummaries();
+    setStatus('✓ read', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { alert('Failed to mark as read: ' + e.message); }
+}
+
+async function promoteToTask(summaryId) {
+  const s = summaries.find(x => x.id === summaryId);
+  if (!s) return;
+  const title = (s.content || '').substring(0, 60).trim();
+  const description = (s.content || '') + '\n\nSource: ' + (s.summary_source || '');
+  const now = new Date().toISOString();
+  const payload = {
+    id: 'T' + Date.now().toString(36).toUpperCase(),
+    title, description,
+    category: 'todo', priority: 'medium', status: 'backlog',
+    source: 'Summary', created_at: now, updated_at: now
+  };
+  try {
+    const result = await sbWrite('tasks', 'POST', null, payload);
+    items.unshift(result && result[0] ? result[0] : payload);
+    renderKanban();
+    // Brief confirmation on the button
+    const btn = document.getElementById('promote-' + summaryId);
+    if (btn) {
+      btn.textContent = '✓ Task created';
+      btn.style.color = 'var(--green)';
+      setTimeout(() => { btn.textContent = '→ Create Task'; btn.style.color = ''; }, 2000);
+    }
+  } catch(e) { alert('Failed to create task: ' + e.message); }
+}
+
+function reviewCardHTML(item) {
+  return `<div class="card" data-id="${item.id}" onclick="openModal('${item.id}')">
+    <div class="card-title">${escHtml(item.title)}</div>
+    <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span></div>
+    ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
+    <div class="card-actions">
+      <button class="review-approve-btn" onclick="event.stopPropagation();approveReview('${item.id}')">✓ Approve</button>
+      <button class="review-dismiss-btn" onclick="event.stopPropagation();dismissReview('${item.id}')">✗ Dismiss</button>
+    </div>
+  </div>`;
+}
+
+function updateReviewBadge() {
+  const count = items.filter(i => i.status === 'review').length;
+  const badge = document.getElementById('reviewBadge');
+  if (count > 0) {
+    badge.textContent = count;
+    badge.style.display = 'inline-flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+async function approveReview(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  item.status = 'backlog';
+  renderKanban();
+  try {
+    await sbWrite('tasks', 'PATCH', id, { status: 'backlog', updated_at: new Date().toISOString() });
+    logActivity(id, 'approved', 'Moved from review to backlog');
+    setStatus('✓ approved', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { item.status = 'review'; renderKanban(); setStatus('⚠ save failed', 'var(--red)'); }
+}
+
+async function dismissReview(id) {
+  showConfirm('Dismiss this task? It will be permanently deleted.', async () => {
+    try {
+      await sbDelete('tasks', id);
+      items = items.filter(i => i.id !== id);
+      renderKanban();
+      setStatus('✓ dismissed', 'var(--muted)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+    } catch(e) { alert('Dismiss failed: ' + e.message); }
+  });
+}
+
 // Enable reorder within columns (set up once)
 document.addEventListener('DOMContentLoaded', () => {
-  ['backlog','in_progress','done'].forEach(col => {
+  ['review','backlog','in_progress','done'].forEach(col => {
     const body = document.getElementById('body-' + col);
     body.addEventListener('dragover', e => {
       e.preventDefault();
@@ -460,5 +607,39 @@ function startPolling() {
     }
   }, 60000);
 }
+
+function escAttr(s) { return String(s||'').replace(/'/g,'&#39;').replace(/"/g,'&quot;'); }
+
+function expandSummary(id) {
+  const s = summaries.find(x => x.id === id);
+  if (!s) return;
+  const time = s.created_at ? new Date(s.created_at).toLocaleString('en-ZA', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+  const source = s.summary_source || '';
+  const scanType = s.scan_type || 'scan';
+
+  document.getElementById('summaryExpandTitle').textContent = (source ? source + ' • ' : '') + scanType;
+  document.getElementById('summaryExpandBody').innerHTML = `
+    <div style="margin-bottom:16px">
+      <div style="color:var(--muted);font-size:12px;margin-bottom:8px">${time}</div>
+      <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word">${escHtml(s.content || '')}</div>
+    </div>
+    ${s.tasks_added ? `<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:6px;font-size:13px">✓ <strong>${s.tasks_added} task${s.tasks_added===1?'':'s'} created</strong> from this summary</div>` : ''}
+    <div style="display:flex;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+      <button class="review-approve-btn" style="padding:6px 12px;border-radius:6px;border:1px solid var(--green);background:transparent;cursor:pointer;font-size:12px" onclick="markSummaryRead('${escAttr(s.id)}');closeSummaryExpand()">✓ Mark as Read</button>
+      <button style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px" onclick="promoteToTask('${escAttr(s.id)}')">→ Create Task</button>
+    </div>
+  `;
+  document.getElementById('summaryExpandOverlay').style.display = 'flex';
+}
+
+function closeSummaryExpand() {
+  document.getElementById('summaryExpandOverlay').style.display = 'none';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (document.getElementById('summaryExpandOverlay').style.display === 'flex') closeSummaryExpand();
+  }
+});
 
 loadItems().then(() => startPolling());
