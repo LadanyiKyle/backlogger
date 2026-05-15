@@ -606,8 +606,22 @@ function renderTimeLogs() {
   totalEl.textContent = 'Total: ' + formatDuration(total);
 }
 
-async function addQuickTime(minutes) {
-  if (!editingId) return;
+let accumMinutes = 0;
+
+function accumTime(mins) {
+  accumMinutes += mins;
+  document.getElementById('accumDisplay').textContent = formatDuration(accumMinutes);
+}
+
+function resetAccumTime() {
+  accumMinutes = 0;
+  document.getElementById('accumDisplay').textContent = '';
+}
+
+async function commitTime() {
+  if (!editingId || accumMinutes <= 0) return;
+  const minutes = accumMinutes;
+  resetAccumTime();
   const now = new Date().toISOString();
   const entry = { task_id: editingId, duration_minutes: minutes, logged: false, created_at: now, started_at: now, ended_at: now };
   try {
@@ -616,16 +630,8 @@ async function addQuickTime(minutes) {
     else currentTimeLogs.push(entry);
     logActivity(editingId, 'time logged', formatDuration(minutes));
     renderTimeLogs();
-    setStatus('✓ +' + minutes + 'm', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+    setStatus('✓ +' + formatDuration(minutes), 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
   } catch(e) { alert('Failed to log time: ' + e.message); }
-}
-
-async function addCustomTime() {
-  const input = document.getElementById('customMinutes');
-  const minutes = parseInt(input.value);
-  if (!minutes || minutes < 1) { alert('Enter a valid number of minutes'); return; }
-  await addQuickTime(minutes);
-  input.value = '';
 }
 
 async function logActivity(taskId, action, detail) {
