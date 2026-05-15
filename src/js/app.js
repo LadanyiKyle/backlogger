@@ -459,21 +459,14 @@ function renderDeadlineDisplay(item) {
   el.innerHTML = `<span>Due: <strong>${formatted}</strong></span> <span style="color:${color};margin-left:8px;font-weight:600">${remainText}</span>`;
 }
 
-async function setDeadline(days) {
-  if (!editingId) return;
-  const deadline = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
-  try {
-    await sbWrite('tasks', 'PATCH', editingId, { deadline, updated_at: new Date().toISOString() });
-    const idx = items.findIndex(i => i.id === editingId);
-    if (idx !== -1) items[idx].deadline = deadline;
-    renderDeadlineDisplay(items[idx]);
-    renderCurrent();
-    setStatus('✓ deadline set', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
-  } catch(e) { alert('Failed to set deadline: ' + e.message); }
+function prefillDeadline(days) {
+  const d = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  const local = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + 'T' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  document.getElementById('deadlinePicker').value = local;
 }
 
-async function setDeadlineFromPicker() {
-  if (!editingId) { console.error('No editingId'); return; }
+async function saveDeadlineFromPicker() {
+  if (!editingId) return;
   const picker = document.getElementById('deadlinePicker');
   const val = picker.value;
   if (!val) { alert('Please select a date and time first'); return; }
@@ -484,7 +477,6 @@ async function setDeadlineFromPicker() {
     if (idx !== -1) items[idx].deadline = deadline;
     renderDeadlineDisplay(items[idx]);
     renderCurrent();
-    picker.value = '';
     setStatus('✓ deadline set', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
   } catch(e) { alert('Failed to set deadline: ' + e.message); }
 }

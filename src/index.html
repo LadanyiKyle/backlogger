@@ -112,14 +112,16 @@
       <div class="sec-divider" id="deadlineSection">
         <div class="sec-label">⏰ Deadline</div>
         <div id="deadlineDisplay" style="font-size:13px;color:var(--muted);margin-bottom:6px"></div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          <button class="btn-timer btn-time-add" onclick="setDeadline(0.5)">+½ day</button>
-          <button class="btn-timer btn-time-add" onclick="setDeadline(1)">+1 day</button>
-          <button class="btn-timer btn-time-add" onclick="setDeadline(2)">+2 days</button>
-          <button class="btn-timer btn-time-add" onclick="setDeadline(3)">+3 days</button>
-          <button class="btn-timer btn-time-add" onclick="setDeadline(7)">+1 week</button>
-          <input type="datetime-local" id="deadlinePicker" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;">
-          <button class="btn-timer btn-time-add" onclick="event.stopPropagation();setDeadlineFromPicker()">Set</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+          <button class="btn-timer btn-time-add" onclick="prefillDeadline(0.5)">+½ day</button>
+          <button class="btn-timer btn-time-add" onclick="prefillDeadline(1)">+1 day</button>
+          <button class="btn-timer btn-time-add" onclick="prefillDeadline(2)">+2 days</button>
+          <button class="btn-timer btn-time-add" onclick="prefillDeadline(3)">+3 days</button>
+          <button class="btn-timer btn-time-add" onclick="prefillDeadline(7)">+1 week</button>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="datetime-local" id="deadlinePicker" style="flex:1;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;">
+          <button class="btn-timer btn-time-add" style="color:var(--green);border-color:var(--green)" onclick="saveDeadlineFromPicker()">Set Deadline</button>
           <button class="btn-timer btn-time-add" style="color:var(--red);border-color:var(--red)" onclick="clearDeadline()">✕ Clear</button>
         </div>
       </div>
