@@ -137,21 +137,21 @@
           <button class="btn-timer btn-time-add" onclick="addCustomTime()">+ Add</button>
         </div>
       </div>
+      <div class="sec-divider" id="commentsSection" style="display:none">
+        <div class="sec-label">� Comments</div>
+        <div id="commentsList"></div>
+        <div class="input-row">
+          <input type="text" id="commentInput" placeholder="Add a comment..." onkeydown="if(event.key==='Enter')addComment()">
+          <button onclick="addComment()">Post</button>
+        </div>
+      </div>
       <div class="sec-divider" id="attachmentsSection" style="display:none">
-        <div class="sec-label">📎 Attachments</div>
+        <div class="sec-label">� Attachments</div>
         <div id="attachmentsList"></div>
         <div class="input-row">
           <input type="text" id="attachLabel" placeholder="Label (e.g. Design Doc)">
           <input type="text" id="attachUrl" placeholder="URL..." style="flex:2">
           <button onclick="addAttachment()">Add</button>
-        </div>
-      </div>
-      <div class="sec-divider" id="commentsSection" style="display:none">
-        <div class="sec-label">💬 Comments</div>
-        <div id="commentsList"></div>
-        <div class="input-row">
-          <input type="text" id="commentInput" placeholder="Add a comment..." onkeydown="if(event.key==='Enter')addComment()">
-          <button onclick="addComment()">Post</button>
         </div>
       </div>
       <div class="sec-divider" id="activitySection" style="display:none">
