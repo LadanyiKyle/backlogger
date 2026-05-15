@@ -73,45 +73,80 @@ function sendSuggestion(el) {
 
 // ── FILE UPLOAD ──────────────────────────────────────────────────────────────
 
-function handleFileUpload(event) {
+// Dynamically load mammoth.js for .docx extraction (loaded once on first use)
+let mammothLoaded = false;
+function loadMammoth() {
+  return new Promise((resolve, reject) => {
+    if (mammothLoaded || window.mammoth) { mammothLoaded = true; return resolve(); }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js';
+    script.onload = () => { mammothLoaded = true; resolve(); };
+    script.onerror = () => reject(new Error('Failed to load mammoth.js'));
+    document.head.appendChild(script);
+  });
+}
+
+async function handleFileUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
-  // Reset input so same file can be re-uploaded
   event.target.value = '';
 
-  const maxSize = 500 * 1024; // 500KB limit for text extraction
-  if (file.size > maxSize && !file.name.endsWith('.pdf')) {
-    appendMessage('assistant', `That file is quite large (${(file.size/1024).toFixed(0)}KB). Try a smaller doc or paste the text directly.`);
+  const maxSize = 5 * 1024 * 1024; // 5MB
+  if (file.size > maxSize) {
+    appendMessage('assistant', `That file is too large (${(file.size/1024/1024).toFixed(1)}MB). Try a smaller doc or paste the text directly.`);
     return;
   }
 
-  const reader = new FileReader();
+  const name = file.name.toLowerCase();
 
-  if (file.name.endsWith('.pdf')) {
-    // For PDFs, read as text (basic extraction — works for text-based PDFs)
+  // ── .docx — use mammoth for proper text extraction ──
+  if (name.endsWith('.docx') || name.endsWith('.doc')) {
+    appendMessage('assistant', `Reading ${file.name}…`);
+    try {
+      await loadMammoth();
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      if (result.value && result.value.trim().length > 20) {
+        setFileContext(file.name, result.value.trim());
+        // Remove the "reading" message
+        const msgs = document.getElementById('aiMessages');
+        if (msgs.lastChild) msgs.removeChild(msgs.lastChild);
+      } else {
+        appendMessage('assistant', `Couldn't extract text from this Word doc. Try saving as .txt and uploading again.`);
+      }
+    } catch(e) {
+      appendMessage('assistant', `Error reading Word doc: ${e.message}`);
+    }
+    return;
+  }
+
+  // ── .pdf — heuristic binary extraction ──
+  if (name.endsWith('.pdf')) {
+    const reader = new FileReader();
     reader.onload = () => {
-      // Extract readable text from PDF binary using a simple regex approach
       const raw = reader.result;
       const textMatches = raw.match(/\(([^)]{3,})\)/g);
       if (textMatches && textMatches.length > 10) {
-        const extracted = textMatches.map(m => m.slice(1,-1)).join(' ').replace(/\\[rn]/g,' ').substring(0, 8000);
+        const extracted = textMatches.map(m => m.slice(1,-1)).join(' ').replace(/\\[rn]/g,' ').trim();
         setFileContext(file.name, extracted);
       } else {
-        appendMessage('assistant', `I couldn't extract text from this PDF. Try saving it as a .txt file and uploading again.`);
+        appendMessage('assistant', `Couldn't extract text from this PDF. Try saving it as .txt and uploading again.`);
       }
     };
     reader.readAsBinaryString(file);
-  } else {
-    // Plain text, markdown, doc-as-text
-    reader.onload = () => setFileContext(file.name, reader.result);
-    reader.readAsText(file);
+    return;
   }
+
+  // ── Plain text / markdown / csv ──
+  const reader = new FileReader();
+  reader.onload = () => setFileContext(file.name, reader.result);
+  reader.readAsText(file);
 }
 
 function setFileContext(name, content) {
   pendingFileName = name;
-  // Truncate to ~8000 chars to stay within token limits
-  pendingFileContent = content.substring(0, 8000);
+  // Truncate to ~15000 chars (~4000 tokens) — enough for detailed meeting notes
+  pendingFileContent = content.substring(0, 15000);
 
   // Show file pill in chat
   const msgs = document.getElementById('aiMessages');
@@ -127,7 +162,7 @@ function setFileContext(name, content) {
 
   // Pre-fill input with suggestion
   const input = document.getElementById('aiInput');
-  input.value = 'Summarise this doc and create tasks from any action items';
+  input.value = 'Summarise this doc and create tasks from all action items, grouped by urgency';
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, 120) + 'px';
   input.focus();
@@ -196,36 +231,49 @@ async function sendChat() {
   showTyping();
 
   try {
-    const systemPrompt = `You are BackLogger AI, a personal productivity assistant for Kyle (kyle@exonic.co.za).
-You have access to Kyle's current task board. Here is the current state:
+    const systemPrompt = `You are BackLogger AI — Kyle's sharp personal productivity assistant (kyle@exonic.co.za). Kyle is a PM/project owner at Exonic, a software consultancy based in South Africa.
 
+Today's date: ${new Date().toLocaleDateString('en-ZA', {weekday:'long',year:'numeric',month:'long',day:'numeric'})}
+
+── CURRENT TASK BOARD ──
 ${taskContext}
 
-You can answer questions about tasks, give summaries, suggest priorities, CREATE or UPDATE tasks, and process uploaded documents (meeting notes, emails, briefs) to extract action items and create tasks from them.
+── YOUR CAPABILITIES ──
+You can answer questions about tasks, give summaries, suggest priorities, and CREATE or UPDATE tasks directly on Kyle's board. You also process uploaded documents — meeting notes, emails, briefs, specs — and extract every concrete action item from them.
 
-When you want to perform an action on the board, include a JSON block at the END of your response in this exact format:
+── WHEN PROCESSING A DOCUMENT ──
+Read the full document carefully. Extract ALL explicit and implicit action items. For each one:
+- Write a concise, verb-first task title (e.g. "Send rebaseline deck to Scott", "Research KYC compliance obligations")
+- Include a description with: what needs to be done, who owns it, any deadline or context from the doc
+- Assign priority: critical (blocker/imminent deadline), high (this week), medium (this sprint), low (later)
+- Assign the right category: client | internal | research | training | trading | todo | meetings
+- Do NOT lump everything into generic tasks like "Review meeting notes" — extract the actual work items
+- Group your text summary by urgency (immediate, this week, this sprint, ongoing) before the action block
+- If a person is named as owner, put their name in the description
+- If a date or deadline is mentioned, include it in the description
 
+── ACTIONS ──
+To create one task, include at the END of your response:
 \`\`\`action
-{"type":"create_task","title":"...","description":"...","category":"client|internal|research|training|trading|todo|meetings","priority":"critical|high|medium|low","status":"backlog|in_progress|done","source":"AI Chat"}
+{"type":"create_task","title":"...","description":"...","category":"client|internal|research|training|trading|todo|meetings","priority":"critical|high|medium|low","status":"backlog","source":"AI Chat"}
 \`\`\`
 
-Or to update a task status:
+To create multiple tasks at once (preferred for documents):
+\`\`\`action
+{"type":"create_tasks","tasks":[{"title":"...","description":"...","category":"...","priority":"critical|high|medium|low","status":"backlog","source":"AI Chat"}]}
+\`\`\`
+
+To update a task status:
 \`\`\`action
 {"type":"update_status","id":"...","status":"backlog|in_progress|done"}
 \`\`\`
 
-Or to create multiple tasks at once:
-\`\`\`action
-{"type":"create_tasks","tasks":[{"title":"...","description":"...","category":"...","priority":"...","status":"backlog","source":"AI Chat"}]}
-\`\`\`
+── RULES ──
+- Only include an action block if Kyle is explicitly asking you to add/create/update something
+- Be direct, specific, and thorough — vague tasks are useless
+- Keep your text response clean — no excessive markdown, just clear prose or grouped plain-text lists
+- Always confirm what you created at the end`;
 
-Rules:
-- Only include an action block if the user is explicitly asking you to add/create/update something
-- Keep task titles concise and actionable (start with a verb)
-- Be conversational, direct, and helpful
-- Format your text response cleanly — no markdown headers, just clear prose
-- If summarising tasks, use plain text not bullet markdown
-- Today's date is ${new Date().toLocaleDateString('en-ZA', {weekday:'long',year:'numeric',month:'long',day:'numeric'})}`;
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -241,8 +289,8 @@ Rules:
       body: JSON.stringify({
         model: GROK_MODEL,
         messages,
-        max_tokens: 1024,
-        temperature: 0.7
+        max_tokens: 2048,
+        temperature: 0.4
       })
     });
 
