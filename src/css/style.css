@@ -109,6 +109,11 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .column-summaries .col-header { color: var(--accent2); }
 .col-count-summaries { background: rgba(139,92,246,0.2); color: var(--accent2); }
 .summary-card { cursor: default; }
+.summary-source-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.summary-sub-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .summary-content { font-size: 12px; color: var(--text); line-height: 1.5; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .summary-tasks-count { font-size: 11px; color: var(--green); font-weight: 600; }
+.summary-promote-btn { opacity: 0; transition: opacity 0.15s; margin-left: auto; color: var(--muted) !important; border-color: var(--border) !important; }
+.summary-card:hover .summary-promote-btn { opacity: 1; }
+.summary-promote-btn:hover { color: var(--accent) !important; border-color: var(--accent) !important; }
 .badge-scan { background: rgba(139,92,246,0.2); color: #c4b5fd; text-transform: capitalize; }

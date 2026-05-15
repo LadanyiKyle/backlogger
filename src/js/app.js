@@ -57,7 +57,7 @@ async function loadItems() {
   const [data, comments, summaryData] = await Promise.all([
     sbRead('tasks', 'select=*&order=created_at.desc'),
     sbRead('comments', 'select=task_id,body,created_at&order=created_at.desc'),
-    sbRead('summaries', 'select=*&status=eq.unread&order=created_at.desc')
+    sbRead('summaries', 'select=*&order=created_at.desc&status=eq.unread')
   ]);
   if (data && Array.isArray(data)) {
     items = data;
@@ -158,17 +158,17 @@ function renderSummaries() {
   col.style.display = 'flex';
   cnt.textContent = summaries.length;
   body.innerHTML = summaries.map(s => {
-    const scanBadge = s.scan_type || 'scan';
     const time = s.created_at ? new Date(s.created_at).toLocaleString('en-ZA', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+    const source = s.summary_source || '';
+    const scanType = s.scan_type || 'scan';
     return `<div class="card summary-card">
-      <div class="card-meta" style="margin-bottom:6px">
-        <span class="badge badge-scan">${escHtml(scanBadge)}</span>
-        <span style="font-size:11px;color:var(--muted)">${time}</span>
-      </div>
+      <div class="summary-source-title">${escHtml(source)}</div>
+      <div class="summary-sub-meta"><span class="badge badge-scan">${escHtml(scanType)}</span> <span style="color:var(--muted);font-size:11px">${time}</span></div>
       <div class="summary-content">${escHtml(s.content || '')}</div>
       ${s.tasks_added ? `<div class="summary-tasks-count">+${s.tasks_added} tasks added</div>` : ''}
       <div class="card-actions" style="margin-top:8px">
         <button class="review-approve-btn" onclick="markSummaryRead('${s.id}')">✓ Mark as Read</button>
+        <button class="summary-promote-btn" id="promote-${s.id}" onclick="event.stopPropagation();promoteToTask('${s.id}')">→ Create Task</button>
       </div>
     </div>`;
   }).join('');
@@ -181,6 +181,32 @@ async function markSummaryRead(id) {
     renderSummaries();
     setStatus('✓ read', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
   } catch(e) { alert('Failed to mark as read: ' + e.message); }
+}
+
+async function promoteToTask(summaryId) {
+  const s = summaries.find(x => x.id === summaryId);
+  if (!s) return;
+  const title = (s.content || '').substring(0, 60).trim();
+  const description = (s.content || '') + '\n\nSource: ' + (s.summary_source || '');
+  const now = new Date().toISOString();
+  const payload = {
+    id: 'T' + Date.now().toString(36).toUpperCase(),
+    title, description,
+    category: 'todo', priority: 'medium', status: 'backlog',
+    source: 'Summary', created_at: now, updated_at: now
+  };
+  try {
+    const result = await sbWrite('tasks', 'POST', null, payload);
+    items.unshift(result && result[0] ? result[0] : payload);
+    renderKanban();
+    // Brief confirmation on the button
+    const btn = document.getElementById('promote-' + summaryId);
+    if (btn) {
+      btn.textContent = '✓ Task created';
+      btn.style.color = 'var(--green)';
+      setTimeout(() => { btn.textContent = '→ Create Task'; btn.style.color = ''; }, 2000);
+    }
+  } catch(e) { alert('Failed to create task: ' + e.message); }
 }
 
 function reviewCardHTML(item) {
