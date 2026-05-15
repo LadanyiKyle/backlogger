@@ -473,9 +473,10 @@ async function setDeadline(days) {
 }
 
 async function setDeadlineFromPicker() {
-  if (!editingId) return;
-  const val = document.getElementById('deadlinePicker').value;
-  if (!val) return;
+  if (!editingId) { console.error('No editingId'); return; }
+  const picker = document.getElementById('deadlinePicker');
+  const val = picker.value;
+  if (!val) { alert('Please select a date and time first'); return; }
   const deadline = new Date(val).toISOString();
   try {
     await sbWrite('tasks', 'PATCH', editingId, { deadline, updated_at: new Date().toISOString() });
@@ -483,6 +484,7 @@ async function setDeadlineFromPicker() {
     if (idx !== -1) items[idx].deadline = deadline;
     renderDeadlineDisplay(items[idx]);
     renderCurrent();
+    picker.value = '';
     setStatus('✓ deadline set', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
   } catch(e) { alert('Failed to set deadline: ' + e.message); }
 }
