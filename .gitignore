@@ -12,3 +12,6 @@ Thumbs.db
 
 # Dependencies (if you add a bundler later)
 node_modules/
+
+# Local config with API keys — never commit this
+src/js/config.js
