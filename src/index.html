@@ -17,6 +17,9 @@
     <button id="tabCalendar" onclick="switchView('calendar')">Calendar</button>
     <a href="timereport.html" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;text-decoration:none;display:flex;align-items:center">⏱ Report</a>
     <a href="archive.html" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;text-decoration:none;display:flex;align-items:center">🗄 Archive</a>
+    <a href="notifications.html" id="notifBtn" style="position:relative;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;text-decoration:none;display:flex;align-items:center;gap:4px">
+      🔔<span id="notifBadge" style="display:none;position:absolute;top:4px;right:4px;min-width:16px;height:16px;border-radius:8px;background:var(--red);color:#fff;font-size:10px;font-weight:700;align-items:center;justify-content:center;padding:0 4px"></span>
+    </a>
   </div>
 </div>
 
@@ -37,13 +40,6 @@
   <button class="btn-add" onclick="openModal(null)">+ Add Task</button>
 </div>
 
-<div class="reminder-banner" id="reminderBanner" style="display:none">
-  <div class="reminder-header">
-    <span>⚠️ Upcoming Deadlines</span>
-    <button class="reminder-dismiss" onclick="dismissReminders()">×</button>
-  </div>
-  <div id="reminderList"></div>
-</div>
 
 <div class="kanban" id="kanbanView">
   <div class="column column-review" id="col-review" ondragover="onDragOver(event,'review')" ondrop="onDrop(event,'review')" ondragleave="onDragLeave(event)">

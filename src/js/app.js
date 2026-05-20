@@ -118,62 +118,25 @@ async function autoArchiveOldDone() {
 }
 
 function checkReminders() {
-  const todayKey = 'reminders_dismissed_' + new Date().toISOString().substring(0, 10);
-  if (localStorage.getItem(todayKey)) { updateReminderBadge(0); return; }
-
   const now = Date.now();
   const sevenDays = 7 * 24 * 60 * 60 * 1000;
-  const reminders = items.filter(i =>
+  // Exclude individually dismissed notifications
+  const dismissed = getDismissedNotifs();
+  const count = items.filter(i =>
     (i.status === 'backlog' || i.status === 'in_progress') &&
     i.deadline &&
-    (new Date(i.deadline).getTime() - now) <= sevenDays
-  );
-
-  if (!reminders.length) {
-    document.getElementById('reminderBanner').style.display = 'none';
-    updateReminderBadge(0);
-    return;
+    (new Date(i.deadline).getTime() - now) <= sevenDays &&
+    !dismissed.includes(i.id)
+  ).length;
+  const badge = document.getElementById('notifBadge');
+  if (badge) {
+    if (count > 0) { badge.textContent = count; badge.style.display = 'inline-flex'; }
+    else { badge.style.display = 'none'; }
   }
-
-  reminders.sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
-  const list = document.getElementById('reminderList');
-  list.innerHTML = reminders.map(t => {
-    const diff = new Date(t.deadline).getTime() - now;
-    const days = Math.ceil(diff / (24 * 60 * 60 * 1000));
-    let label, cls;
-    if (days < 0) { label = 'Overdue ' + Math.abs(days) + 'd'; cls = 'reminder-overdue'; }
-    else if (days === 0) { label = 'Due today'; cls = 'reminder-overdue'; }
-    else if (days === 1) { label = 'Due tomorrow'; cls = 'reminder-urgent'; }
-    else { label = 'Due in ' + days + ' days'; cls = 'reminder-soon'; }
-    return `<div class="reminder-item ${cls}" onclick="openModal('${t.id}')">
-      <span class="reminder-title">${escHtml(t.title)}</span>
-      <span class="badge badge-priority-${t.priority}">${t.priority}</span>
-      <span class="reminder-due">${label}</span>
-    </div>`;
-  }).join('');
-
-  document.getElementById('reminderBanner').style.display = 'block';
-  updateReminderBadge(reminders.length);
 }
 
-function dismissReminders() {
-  const todayKey = 'reminders_dismissed_' + new Date().toISOString().substring(0, 10);
-  localStorage.setItem(todayKey, '1');
-  document.getElementById('reminderBanner').style.display = 'none';
-  updateReminderBadge(0);
-}
-
-function updateReminderBadge(count) {
-  let badge = document.getElementById('reminderBadgeCount');
-  if (!badge) {
-    const btn = document.getElementById('tabKanban');
-    badge = document.createElement('span');
-    badge.id = 'reminderBadgeCount';
-    badge.className = 'reminder-badge-count';
-    btn.appendChild(badge);
-  }
-  if (count > 0) { badge.textContent = count; badge.style.display = 'inline-flex'; }
-  else { badge.style.display = 'none'; }
+function getDismissedNotifs() {
+  try { return JSON.parse(localStorage.getItem('notifs_dismissed') || '[]'); } catch(e) { return []; }
 }
 
 function getFiltered() {

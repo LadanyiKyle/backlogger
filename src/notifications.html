@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BackLogger — Notifications</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body { overflow: auto; }
+  .notif-container { padding: 20px; max-width: 800px; margin: 0 auto; }
+  .notif-table { width: 100%; border-collapse: collapse; }
+  .notif-table th { text-align: left; padding: 10px 12px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
+  .notif-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+  .notif-table tr.dismissed td { opacity: 0.35; }
+  .notif-table tr:not(.dismissed):hover td { background: var(--surface2); cursor: pointer; }
+  .notif-title { font-weight: 500; color: var(--text); }
+  .notif-due { font-weight: 600; font-size: 12px; }
+  .due-overdue { color: var(--red); }
+  .due-urgent  { color: var(--orange); }
+  .due-soon    { color: var(--yellow); }
+  .notif-delete-btn { background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+  .notif-delete-btn:hover { color: var(--red); background: rgba(239,68,68,0.1); }
+  .empty-notif { text-align: center; padding: 60px 20px; color: var(--muted); font-size: 14px; }
+  /* Modal overlay for editing task inline */
+  .notif-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 900; align-items: center; justify-content: center; }
+  .notif-modal-frame { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; padding: 24px; margin: 0 16px; }
+  .notif-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .notif-modal-title { font-size: 15px; font-weight: 600; color: var(--text); }
+  .notif-modal-close { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; }
+  .field-group { margin-bottom: 14px; }
+  .field-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .field-group input, .field-group textarea, .field-group select { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; font-family: inherit; }
+  .field-group textarea { resize: vertical; min-height: 60px; }
+  .field-row { display: flex; gap: 10px; }
+  .field-row .field-group { flex: 1; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .btn-save { padding: 9px 20px; background: var(--accent); color: #fff; border: none; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn-cancel { padding: 9px 16px; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 7px; font-size: 13px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>BackLogger</h1>
+  <span class="status" id="statusDot">⏳ loading...</span>
+  <div class="spacer"></div>
+  <div style="display:flex;gap:4px">
+    <a href="index.html" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;text-decoration:none;display:flex;align-items:center">← Board</a>
+    <button class="active">🔔 Notifications</button>
+  </div>
+</div>
+
+<div class="notif-container">
+  <div id="notifView"></div>
+</div>
+
+<!-- Inline edit modal -->
+<div class="notif-modal-overlay" id="notifModalOverlay">
+  <div class="notif-modal-frame">
+    <div class="notif-modal-header">
+      <span class="notif-modal-title" id="notifModalTitle">Edit Task</span>
+      <button class="notif-modal-close" onclick="closeNotifModal()">×</button>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Title</div>
+      <input type="text" id="nfTitle">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Description</div>
+      <textarea id="nfDescription"></textarea>
+    </div>
+    <div class="field-row">
+      <div class="field-group">
+        <div class="field-label">Category</div>
+        <select id="nfCategory">
+          <option>client</option><option>internal</option><option>research</option>
+          <option>training</option><option>trading</option><option>todo</option><option>meetings</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Priority</div>
+        <select id="nfPriority">
+          <option>critical</option><option>high</option><option>medium</option><option>low</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Status</div>
+        <select id="nfStatus">
+          <option value="backlog">Backlog</option>
+          <option value="in_progress">In Progress</option>
+          <option value="review">Review</option>
+          <option value="done">Done</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Deadline</div>
+      <input type="date" id="nfDeadline">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeNotifModal()">Cancel</button>
+      <button class="btn-save" onclick="saveNotifTask()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SB_URL = 'https://ocjuxlfysrafnxfwsehr.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9janV4bGZ5c3JhZm54ZndzZWhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NzAzMDYsImV4cCI6MjA5NDM0NjMwNn0.pOFOoGIaOsAGOxPrwn8FM_mco3euP4Mhen9_4F9ZPis';
+
+let allTasks = [];
+let editingTaskId = null;
+
+function getDismissed() {
+  try { return JSON.parse(localStorage.getItem('notifs_dismissed') || '[]'); } catch(e) { return []; }
+}
+function saveDismissed(arr) {
+  localStorage.setItem('notifs_dismissed', JSON.stringify(arr));
+}
+
+function setStatus(txt, color) {
+  document.getElementById('statusDot').textContent = txt;
+  document.getElementById('statusDot').style.color = color;
+}
+
+async function load() {
+  setStatus('⏳ loading...', 'var(--muted)');
+  try {
+    const res = await fetch(`${SB_URL}/rest/v1/tasks?select=*&order=created_at.asc`, {
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Accept': 'application/json' }
+    });
+    allTasks = await res.json();
+    // Assign seq numbers
+    allTasks.forEach((t, i) => { t._seq = String(i + 1).padStart(3, '0'); });
+    setStatus('● live', 'var(--green)');
+    render();
+  } catch(e) { setStatus('⚠ offline', 'var(--red)'); }
+}
+
+function getDueLabel(deadline) {
+  const now = Date.now();
+  const diff = new Date(deadline).getTime() - now;
+  const days = Math.ceil(diff / (24 * 60 * 60 * 1000));
+  if (days < 0)  return { label: `Overdue ${Math.abs(days)}d`, cls: 'due-overdue' };
+  if (days === 0) return { label: 'Due today',    cls: 'due-overdue' };
+  if (days === 1) return { label: 'Due tomorrow', cls: 'due-urgent' };
+  return { label: `Due in ${days}d`, cls: 'due-soon' };
+}
+
+function render() {
+  const el = document.getElementById('notifView');
+  const now = Date.now();
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+  const dismissed = getDismissed();
+
+  const notifs = allTasks.filter(t =>
+    (t.status === 'backlog' || t.status === 'in_progress') &&
+    t.deadline &&
+    (new Date(t.deadline).getTime() - now) <= sevenDays
+  ).sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+
+  if (!notifs.length) {
+    el.innerHTML = '<div class="empty-notif">🎉 No upcoming deadlines. All clear!</div>';
+    return;
+  }
+
+  let html = `<table class="notif-table">
+    <thead><tr>
+      <th>#</th><th>Task</th><th>Category</th><th>Priority</th><th>Due</th><th></th>
+    </tr></thead><tbody>`;
+
+  notifs.forEach(t => {
+    const isDismissed = dismissed.includes(t.id);
+    const due = getDueLabel(t.deadline);
+    const deadlineFormatted = new Date(t.deadline).toLocaleDateString('en-ZA', {day:'numeric',month:'short',year:'numeric'});
+    html += `<tr class="${isDismissed ? 'dismissed' : ''}" id="notif-row-${t.id}">
+      <td style="color:var(--muted);font-family:monospace;font-size:11px">#${t._seq}</td>
+      <td class="notif-title" onclick="${isDismissed ? '' : `openNotifModal('${t.id}')`}">${escHtml(t.title)}</td>
+      <td><span class="badge badge-cat">${t.category||''}</span></td>
+      <td><span class="badge badge-priority-${t.priority}">${t.priority||''}</span></td>
+      <td>
+        <span class="notif-due ${due.cls}">${due.label}</span>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${deadlineFormatted}</div>
+      </td>
+      <td>
+        ${isDismissed
+          ? `<button class="notif-delete-btn" title="Restore" onclick="restoreNotif('${t.id}')">↩</button>`
+          : `<button class="notif-delete-btn" title="Dismiss notification" onclick="dismissNotif('${t.id}')">🗑</button>`
+        }
+      </td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function dismissNotif(taskId) {
+  const arr = getDismissed();
+  if (!arr.includes(taskId)) arr.push(taskId);
+  saveDismissed(arr);
+  render();
+}
+
+function restoreNotif(taskId) {
+  saveDismissed(getDismissed().filter(id => id !== taskId));
+  render();
+}
+
+function openNotifModal(taskId) {
+  const t = allTasks.find(i => i.id === taskId);
+  if (!t) return;
+  editingTaskId = taskId;
+  document.getElementById('notifModalTitle').textContent = `Edit Task  #${t._seq}`;
+  document.getElementById('nfTitle').value = t.title || '';
+  document.getElementById('nfDescription').value = t.description || '';
+  document.getElementById('nfCategory').value = t.category || 'todo';
+  document.getElementById('nfPriority').value = t.priority || 'medium';
+  document.getElementById('nfStatus').value = t.status || 'backlog';
+  document.getElementById('nfDeadline').value = t.deadline ? t.deadline.substring(0, 10) : '';
+  document.getElementById('notifModalOverlay').style.display = 'flex';
+}
+
+function closeNotifModal() {
+  document.getElementById('notifModalOverlay').style.display = 'none';
+  editingTaskId = null;
+}
+
+async function saveNotifTask() {
+  if (!editingTaskId) return;
+  const payload = {
+    title:       document.getElementById('nfTitle').value.trim(),
+    description: document.getElementById('nfDescription').value.trim(),
+    category:    document.getElementById('nfCategory').value,
+    priority:    document.getElementById('nfPriority').value,
+    status:      document.getElementById('nfStatus').value,
+    deadline:    document.getElementById('nfDeadline').value || null,
+    updated_at:  new Date().toISOString()
+  };
+  if (!payload.title) { alert('Title is required'); return; }
+  try {
+    await fetch(`${SB_URL}/rest/v1/tasks?id=eq.${editingTaskId}`, {
+      method: 'PATCH',
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+      body: JSON.stringify(payload)
+    });
+    // Update local
+    const idx = allTasks.findIndex(i => i.id === editingTaskId);
+    if (idx !== -1) allTasks[idx] = Object.assign({}, allTasks[idx], payload);
+    closeNotifModal();
+    render();
+  } catch(e) { alert('Save failed: ' + e.message); }
+}
+
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// Close modal on overlay click
+document.getElementById('notifModalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeNotifModal();
+});
+
+load();
+</script>
+</body>
+</html>
