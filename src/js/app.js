@@ -9,7 +9,6 @@ let currentAttachments = [];
 let summaries = [];
 let currentTags = [];
 let currentLinkedTasks = [];
-let currentParentId = null;
 const todayDate = new Date();
 calYear = todayDate.getFullYear(); calMonth = todayDate.getMonth();
 
@@ -72,17 +71,23 @@ async function loadItems() {
         if (!latestComments[c.task_id]) latestComments[c.task_id] = c.body;
       });
     }
-    // Load full link lists (both directions) for card display
+    // Load link relationships for card display
+    // _outLinks: tasks I linked TO (I initiated) → shown as L on my card
+    // _inLinks: tasks that linked TO me (they initiated) → shown as P on my card
     const links = await sbRead('task_links', 'select=task_id,linked_task_id');
     if (links && Array.isArray(links)) {
-      const linkMap = {}; // task_id -> [linked_task_id, ...]
+      const outMap = {}, inMap = {};
       links.forEach(l => {
-        if (!linkMap[l.task_id]) linkMap[l.task_id] = [];
-        linkMap[l.task_id].push(l.linked_task_id);
+        if (!outMap[l.task_id]) outMap[l.task_id] = [];
+        outMap[l.task_id].push(l.linked_task_id);
+        if (!inMap[l.linked_task_id]) inMap[l.linked_task_id] = [];
+        inMap[l.linked_task_id].push(l.task_id);
       });
       items.forEach(i => {
-        i._linkedIds = linkMap[i.id] || [];
-        i._linkCount = i._linkedIds.length;
+        i._outLinks = outMap[i.id] || [];  // L badges
+        i._inLinks  = inMap[i.id]  || [];  // P badges
+        i._linkedIds = [...new Set([...i._outLinks, ...i._inLinks])]; // for modal list
+        i._linkCount = i._outLinks.length + i._inLinks.length;
       });
     }
     // Assign sequential 3-digit display IDs (#001, #002...) by creation order
@@ -401,32 +406,25 @@ function cardHTML(item) {
   actions += `<button class="card-delete-btn" onclick="event.stopPropagation();deleteCardDirect('${item.id}')">🗑</button>`;
   const deadlineBadge = getDeadlineBadge(item);
   const overdueClass = isOverdue(item) ? ' card-overdue' : '';
-  // Parent badge
-  const parentItem = item.parent_id ? items.find(i => i.id === item.parent_id) : null;
-  const parentBadge = parentItem
-    ? `<span class="badge badge-relation badge-parent" onclick="event.stopPropagation();openModal('${parentItem.id}')" title="${escHtml(parentItem.title)}">P${parentItem._seq||parentItem.id}</span>`
-    : '';
-  // Linked task badges
-  const linkedIds = item._linkedIds || [];
-  const linkedBadges = linkedIds.map(lid => {
+  // P badges: tasks that linked TO this card (they initiated)
+  const pBadges = (item._inLinks || []).map(pid => {
+    const pt = items.find(i => i.id === pid);
+    if (!pt) return '';
+    return `<span class="badge badge-relation badge-parent" onclick="event.stopPropagation();openModal('${pt.id}')" title="${escHtml(pt.title)}">P${pt._seq||pt.id}</span>`;
+  }).join('');
+  // L badges: tasks this card linked TO (I initiated)
+  const lBadges = (item._outLinks || []).map(lid => {
     const lt = items.find(i => i.id === lid);
     if (!lt) return '';
     return `<span class="badge badge-relation badge-linked" onclick="event.stopPropagation();openModal('${lt.id}')" title="${escHtml(lt.title)}">L${lt._seq||lt.id}</span>`;
   }).join('');
-  // Subtask count (keep existing toggle)
-  const subtaskCount = items.filter(i => i.parent_id === item.id).length;
-  const subtaskBadge = subtaskCount
-    ? `<span class="badge badge-subtask" onclick="event.stopPropagation();toggleSubtasks('${item.id}')">◆ ${subtaskCount} subtask${subtaskCount>1?'s':''}</span>`
-    : '';
-  const relationRow = (parentBadge || linkedBadges) ? `<div class="card-relations">${parentBadge}${linkedBadges}</div>` : '';
+  const relationRow = (pBadges || lBadges) ? `<div class="card-relations">${pBadges}${lBadges}</div>` : '';
   return `<div class="card${overdueClass}" data-id="${item.id}" onclick="openModal('${item.id}')">
     <div class="card-title-row"><span class="card-title">${escHtml(item.title)}</span><span class="card-id">#${item._seq||'—'}</span></div>
     <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span>${deadlineBadge}${(item.tags||[]).map(t => `<span class="badge badge-tag">${escHtml(t)}</span>`).join('')}</div>
     ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
     ${latestComments[item.id] ? `<div class="card-comment">💬 ${escHtml(latestComments[item.id])}</div>` : ''}
-    <div class="card-badges">${subtaskBadge}</div>
     ${relationRow}
-    <div class="subtask-list" id="subtasks-${item.id}" style="display:none"></div>
     <div class="card-actions">${actions}</div>
   </div>`;
 }
@@ -531,7 +529,7 @@ async function openModal(id) {
     currentTags = item.tags || [];
     renderTags();
     document.getElementById('btnDelete').style.display = 'inline-flex';
-    ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection','parentTaskSection','linkedTasksSection'].forEach(s => document.getElementById(s).style.display = 'flex');
+    ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection','linkedTasksSection'].forEach(s => document.getElementById(s).style.display = 'flex');
     renderDeadlineDisplay(item);
     const [comments, timelogs, activity, attachments] = await Promise.all([
       sbRead('comments', `task_id=eq.${id}&order=created_at.asc`),
@@ -541,9 +539,7 @@ async function openModal(id) {
     ]);
     currentComments = comments || []; currentTimeLogs = timelogs || []; currentActivity = activity || []; currentAttachments = attachments || [];
     renderComments(); renderTimeLogs(); renderActivity(); renderAttachments();
-    // Load parent and linked tasks
-    currentParentId = item.parent_id || null;
-    renderParentTask();
+    // Load linked tasks (outbound only — tasks this task linked to)
     const links = await sbRead('task_links', `task_id=eq.${id}&select=linked_task_id`);
     currentLinkedTasks = (links || []).map(l => l.linked_task_id);
     renderLinkedTasks();
@@ -556,7 +552,7 @@ async function openModal(id) {
     document.getElementById('btnDelete').style.display = 'none';
     currentTags = [];
     renderTags();
-    ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection','parentTaskSection','linkedTasksSection'].forEach(s => document.getElementById(s).style.display = 'none');
+    ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection','linkedTasksSection'].forEach(s => document.getElementById(s).style.display = 'none');
     renderDeadlineDisplay(null);
   }
   document.getElementById('modalOverlay').style.display = 'flex';
@@ -626,7 +622,6 @@ async function saveTask() {
     category: document.getElementById('fCategory').value, priority: document.getElementById('fPriority').value,
     status: document.getElementById('fStatus').value, source: document.getElementById('fSource').value.trim(),
     tags: currentTags,
-    parent_id: currentParentId || null,
     updated_at: new Date().toISOString()
   };
   try {
@@ -868,43 +863,6 @@ function populateTagFilter() {
 }
 
 // ── Parent Task ──
-function renderParentTask() {
-  const el = document.getElementById('parentTaskDisplay');
-  if (!currentParentId) {
-    el.innerHTML = '<span style="color:var(--muted);font-size:12px">No parent task</span>';
-    return;
-  }
-  const parent = items.find(i => i.id === currentParentId);
-  const label = parent ? `<span class="search-result-id">#${parent._seq||parent.id}</span> ${escHtml(parent.title)}` : currentParentId;
-  el.innerHTML = `<span class="linked-task-pill">${label} <button onclick="removeParent()">×</button></span>`;
-}
-
-function searchParentTasks() {
-  const q = document.getElementById('parentSearchInput').value.toLowerCase().trim();
-  const el = document.getElementById('parentSearchResults');
-  if (!q) { el.innerHTML = ''; return; }
-  const children = items.filter(i => i.parent_id === editingId).map(i => i.id);
-  const results = items.filter(i =>
-    i.id !== editingId && !children.includes(i.id) &&
-    (i.title.toLowerCase().includes(q) || (i._seq && i._seq.includes(q)))
-  ).slice(0, 5);
-  el.innerHTML = results.map(i =>
-    `<div class="search-result-item" onclick="selectParent('${i.id}')"><span class="search-result-id">#${i._seq||i.id}</span> ${escHtml(i.title)}</div>`
-  ).join('') || '<div class="search-result-item" style="color:var(--muted)">No results</div>';
-}
-
-function selectParent(id) {
-  currentParentId = id;
-  renderParentTask();
-  document.getElementById('parentSearchInput').value = '';
-  document.getElementById('parentSearchResults').innerHTML = '';
-}
-
-function removeParent() {
-  currentParentId = null;
-  renderParentTask();
-}
-
 // ── Linked Tasks ──
 function renderLinkedTasks() {
   const el = document.getElementById('linkedTasksList');
@@ -979,14 +937,14 @@ function confirmLinkFromBrowser(targetId) {
 async function linkTask(linkedId) {
   if (!editingId) return;
   try {
+    // Only write the outbound row — editingId is the initiator (parent of link)
     await sbWrite('task_links', 'POST', null, { task_id: editingId, linked_task_id: linkedId });
-    await sbWrite('task_links', 'POST', null, { task_id: linkedId, linked_task_id: editingId });
     currentLinkedTasks.push(linkedId);
-    // Update in-memory _linkedIds on both tasks so cards re-render correctly
+    // Update in-memory: editingId gains an outLink, linkedId gains an inLink
     const a = items.find(i => i.id === editingId);
     const b = items.find(i => i.id === linkedId);
-    if (a) { a._linkedIds = a._linkedIds || []; if (!a._linkedIds.includes(linkedId)) a._linkedIds.push(linkedId); a._linkCount = a._linkedIds.length; }
-    if (b) { b._linkedIds = b._linkedIds || []; if (!b._linkedIds.includes(editingId)) b._linkedIds.push(editingId); b._linkCount = b._linkedIds.length; }
+    if (a) { a._outLinks = a._outLinks || []; if (!a._outLinks.includes(linkedId)) a._outLinks.push(linkedId); }
+    if (b) { b._inLinks  = b._inLinks  || []; if (!b._inLinks.includes(editingId))  b._inLinks.push(editingId); }
     renderLinkedTasks();
     renderCurrent();
     document.getElementById('linkSearchInput').value = '';
@@ -997,32 +955,19 @@ async function linkTask(linkedId) {
 async function unlinkTask(linkedId) {
   if (!editingId) return;
   try {
+    // Delete the single outbound row
     await fetch(`${SB_URL}/rest/v1/task_links?task_id=eq.${editingId}&linked_task_id=eq.${linkedId}`, { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } });
-    await fetch(`${SB_URL}/rest/v1/task_links?task_id=eq.${linkedId}&linked_task_id=eq.${editingId}`, { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } });
     currentLinkedTasks = currentLinkedTasks.filter(id => id !== linkedId);
-    // Update in-memory _linkedIds on both tasks
+    // Update in-memory
     const a = items.find(i => i.id === editingId);
     const b = items.find(i => i.id === linkedId);
-    if (a) { a._linkedIds = (a._linkedIds || []).filter(id => id !== linkedId); a._linkCount = a._linkedIds.length; }
-    if (b) { b._linkedIds = (b._linkedIds || []).filter(id => id !== editingId); b._linkCount = b._linkedIds.length; }
+    if (a) { a._outLinks = (a._outLinks || []).filter(id => id !== linkedId); }
+    if (b) { b._inLinks  = (b._inLinks  || []).filter(id => id !== editingId); }
     renderLinkedTasks();
     renderCurrent();
   } catch(e) { alert('Failed to unlink: ' + e.message); }
 }
 
-// ── Subtask toggle on cards ──
-function toggleSubtasks(parentId) {
-  const el = document.getElementById('subtasks-' + parentId);
-  if (el.style.display === 'none') {
-    const subtasks = items.filter(i => i.parent_id === parentId);
-    el.innerHTML = subtasks.map(s =>
-      `<div class="subtask-item" onclick="event.stopPropagation();openModal('${s.id}')">${escHtml(s.title)}</div>`
-    ).join('');
-    el.style.display = 'block';
-  } else {
-    el.style.display = 'none';
-  }
-}
 
 function switchView(v) {
   currentView = v;
