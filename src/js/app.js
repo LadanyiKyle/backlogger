@@ -74,6 +74,7 @@ async function loadItems() {
     // Auto-archive done tasks older than 7 days
     autoArchiveOldDone();
     populateTagFilter();
+    checkReminders();
     renderCurrent();
   } else {
     setStatus('⚠ offline', 'var(--red)');
@@ -91,6 +92,65 @@ async function autoArchiveOldDone() {
     } catch(e) { console.error('Auto-archive failed for', item.id, e); }
   }
   if (toArchive.length) renderCurrent();
+}
+
+function checkReminders() {
+  const todayKey = 'reminders_dismissed_' + new Date().toISOString().substring(0, 10);
+  if (localStorage.getItem(todayKey)) { updateReminderBadge(0); return; }
+
+  const now = Date.now();
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+  const reminders = items.filter(i =>
+    (i.status === 'backlog' || i.status === 'in_progress') &&
+    i.deadline &&
+    (new Date(i.deadline).getTime() - now) <= sevenDays
+  );
+
+  if (!reminders.length) {
+    document.getElementById('reminderBanner').style.display = 'none';
+    updateReminderBadge(0);
+    return;
+  }
+
+  reminders.sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
+  const list = document.getElementById('reminderList');
+  list.innerHTML = reminders.map(t => {
+    const diff = new Date(t.deadline).getTime() - now;
+    const days = Math.ceil(diff / (24 * 60 * 60 * 1000));
+    let label, cls;
+    if (days < 0) { label = 'Overdue ' + Math.abs(days) + 'd'; cls = 'reminder-overdue'; }
+    else if (days === 0) { label = 'Due today'; cls = 'reminder-overdue'; }
+    else if (days === 1) { label = 'Due tomorrow'; cls = 'reminder-urgent'; }
+    else { label = 'Due in ' + days + ' days'; cls = 'reminder-soon'; }
+    return `<div class="reminder-item ${cls}" onclick="openModal('${t.id}')">
+      <span class="reminder-title">${escHtml(t.title)}</span>
+      <span class="badge badge-priority-${t.priority}">${t.priority}</span>
+      <span class="reminder-due">${label}</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('reminderBanner').style.display = 'block';
+  updateReminderBadge(reminders.length);
+}
+
+function dismissReminders() {
+  const todayKey = 'reminders_dismissed_' + new Date().toISOString().substring(0, 10);
+  localStorage.setItem(todayKey, '1');
+  document.getElementById('reminderBanner').style.display = 'none';
+  updateReminderBadge(0);
+}
+
+function updateReminderBadge(count) {
+  let badge = document.getElementById('reminderBadgeCount');
+  if (!badge) {
+    const btn = document.getElementById('tabKanban');
+    badge = document.createElement('span');
+    badge.id = 'reminderBadgeCount';
+    badge.className = 'reminder-badge-count';
+    btn.appendChild(badge);
+  }
+  if (count > 0) { badge.textContent = count; badge.style.display = 'inline-flex'; }
+  else { badge.style.display = 'none'; }
 }
 
 function getFiltered() {
@@ -432,7 +492,7 @@ async function openModal(id) {
     currentTags = item.tags || [];
     renderTags();
     document.getElementById('btnDelete').style.display = 'inline-flex';
-    ['commentsSection','timelogSection','activitySection','attachmentsSection'].forEach(s => document.getElementById(s).style.display = 'flex');
+    ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection'].forEach(s => document.getElementById(s).style.display = 'flex');
     renderDeadlineDisplay(item);
     const [comments, timelogs, activity, attachments] = await Promise.all([
       sbRead('comments', `task_id=eq.${id}&order=created_at.asc`),
@@ -451,7 +511,7 @@ async function openModal(id) {
     document.getElementById('btnDelete').style.display = 'none';
     currentTags = [];
     renderTags();
-    ['commentsSection','timelogSection','activitySection','attachmentsSection'].forEach(s => document.getElementById(s).style.display = 'none');
+    ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection'].forEach(s => document.getElementById(s).style.display = 'none');
     renderDeadlineDisplay(null);
   }
   document.getElementById('modalOverlay').style.display = 'flex';
@@ -610,6 +670,35 @@ async function addComment() {
   renderComments();
 }
 
+async function logAndPost() {
+  if (!editingId) return;
+  const comment = document.getElementById('logComment').value.trim();
+  const minutes = accumMinutes;
+  if (!comment && minutes <= 0) return;
+  try {
+    if (minutes > 0) {
+      const now = new Date().toISOString();
+      const entry = { task_id: editingId, duration_minutes: minutes, logged: false, created_at: now, started_at: now, ended_at: now };
+      const result = await sbWrite('time_logs', 'POST', null, entry);
+      if (result && result[0]) currentTimeLogs.push(result[0]);
+      else currentTimeLogs.push(entry);
+      logActivity(editingId, 'time logged', formatDuration(minutes));
+      resetAccumTime();
+      renderTimeLogs();
+    }
+    if (comment) {
+      const result = await sbWrite('comments', 'POST', null, { task_id: editingId, body: comment, author: 'Kyle' });
+      if (result && result[0]) currentComments.push(result[0]);
+      latestComments[editingId] = comment;
+      logActivity(editingId, 'commented', comment.substring(0, 60));
+      renderComments();
+      document.getElementById('logComment').value = '';
+    }
+    setStatus('✓ logged', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+    renderCurrent();
+  } catch(e) { alert('Failed: ' + e.message); }
+}
+
 function renderTimeLogs() {
   const el = document.getElementById('timelogEntries'), totalEl = document.getElementById('timelogTotal');
   if (!currentTimeLogs.length) { el.innerHTML = '<div style="color:var(--muted);font-size:12px">No time logged yet</div>'; totalEl.textContent = ''; return; }
@@ -655,7 +744,6 @@ async function commitTime() {
     setStatus('✓ +' + formatDuration(minutes), 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
   } catch(e) { alert('Failed to log time: ' + e.message); }
 }
-
 async function logActivity(taskId, action, detail) {
   try { await sbWrite('activity', 'POST', null, { task_id: taskId, action, detail }); } catch(e) {}
 }

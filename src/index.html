@@ -37,6 +37,14 @@
   <button class="btn-add" onclick="openModal(null)">+ Add Task</button>
 </div>
 
+<div class="reminder-banner" id="reminderBanner" style="display:none">
+  <div class="reminder-header">
+    <span>⚠️ Upcoming Deadlines</span>
+    <button class="reminder-dismiss" onclick="dismissReminders()">×</button>
+  </div>
+  <div id="reminderList"></div>
+</div>
+
 <div class="kanban" id="kanbanView">
   <div class="column column-review" id="col-review" ondragover="onDragOver(event,'review')" ondrop="onDrop(event,'review')" ondragleave="onDragLeave(event)">
     <div class="col-header"><span>👁 Review</span><span class="col-count col-count-review" id="cnt-review">0</span></div>
@@ -136,27 +144,27 @@
           <button class="btn-timer btn-time-add" style="color:var(--red);border-color:var(--red)" onclick="clearDeadline()">✕ Clear</button>
         </div>
       </div>
-      <div class="sec-divider" id="timelogSection" style="display:none">
+            <div class="sec-divider" id="timelogSection" style="display:none">
         <div class="sec-label">⏱ Time Tracking</div>
         <div id="timelogEntries"></div>
         <div class="timelog-total" id="timelogTotal"></div>
-        <div style="display:flex;gap:6px;margin-top:8px;align-items:center;flex-wrap:wrap">
+      </div>
+      <div class="sec-divider" id="commentsSection" style="display:none">
+        <div class="sec-label">💬 Comments</div>
+        <div id="commentsList"></div>
+      </div>
+      <div class="sec-divider" id="logPostSection" style="display:none">
+        <div class="sec-label">✏️ Log & Post</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
           <button class="btn-timer btn-time-add" onclick="accumTime(5)">+5m</button>
           <button class="btn-timer btn-time-add" onclick="accumTime(10)">+10m</button>
           <button class="btn-timer btn-time-add" onclick="accumTime(30)">+30m</button>
           <button class="btn-timer btn-time-add" onclick="accumTime(60)">+1h</button>
           <span id="accumDisplay" style="font-size:13px;font-weight:600;color:var(--accent);min-width:40px"></span>
-          <button class="btn-timer btn-time-add" style="color:var(--green);border-color:var(--green)" onclick="commitTime()">Add</button>
           <button class="btn-timer btn-time-add" style="color:var(--muted);border-color:var(--border)" onclick="resetAccumTime()">✕</button>
         </div>
-      </div>
-      <div class="sec-divider" id="commentsSection" style="display:none">
-        <div class="sec-label">� Comments</div>
-        <div id="commentsList"></div>
-        <div class="input-row">
-          <input type="text" id="commentInput" placeholder="Add a comment..." onkeydown="if(event.key==='Enter')addComment()">
-          <button onclick="addComment()">Post</button>
-        </div>
+        <textarea id="logComment" placeholder="Add a note..." style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;font-family:inherit;resize:vertical;min-height:50px"></textarea>
+        <button class="btn-save" onclick="logAndPost()" style="margin-top:8px;width:100%">Log & Post</button>
       </div>
       <div class="sec-divider" id="attachmentsSection" style="display:none">
         <div class="sec-label">� Attachments</div>
