@@ -395,7 +395,7 @@ function cardHTML(item) {
   const subtaskCount = items.filter(i => i.parent_id === item.id).length;
   const linkCount = item._linkCount || 0;
   return `<div class="card${overdueClass}" data-id="${item.id}" onclick="openModal('${item.id}')">
-    <div class="card-title">${escHtml(item.title)}</div>
+    <div class="card-title-row"><span class="card-title">${escHtml(item.title)}</span><span class="card-id">#${item.id}</span></div>
     <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span>${deadlineBadge}${(item.tags||[]).map(t => `<span class="badge badge-tag">${escHtml(t)}</span>`).join('')}</div>
     ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
     ${latestComments[item.id] ? `<div class="card-comment">💬 ${escHtml(latestComments[item.id])}</div>` : ''}
@@ -682,16 +682,7 @@ function renderComments() {
   }
 }
 
-async function addComment() {
-  const input = document.getElementById('commentInput');
-  const body = input.value.trim(); if (!body || !editingId) return;
-  input.value = '';
-  const result = await sbWrite('comments', 'POST', null, { task_id: editingId, body, author: 'Kyle' });
-  if (result && result[0]) currentComments.push(result[0]);
-  latestComments[editingId] = body;
-  logActivity(editingId, 'commented', body.substring(0, 60));
-  renderComments();
-}
+// addComment() removed — comments are now posted via logAndPost() in the unified Log & Post section
 
 async function logAndPost() {
   if (!editingId) return;
@@ -911,11 +902,55 @@ function searchLinkedTasks() {
   if (!q) { el.innerHTML = ''; return; }
   const results = items.filter(i =>
     i.id !== editingId && !currentLinkedTasks.includes(i.id) &&
-    i.title.toLowerCase().includes(q)
+    (i.title.toLowerCase().includes(q) || i.id.toLowerCase().includes(q))
   ).slice(0, 5);
   el.innerHTML = results.map(i =>
-    `<div class="search-result-item" onclick="linkTask('${i.id}')">${escHtml(i.title)}</div>`
+    `<div class="search-result-item" onclick="linkTask('${i.id}')"><span class="search-result-id">#${i.id}</span> ${escHtml(i.title)}</div>`
   ).join('') || '<div class="search-result-item" style="color:var(--muted)">No results</div>';
+}
+
+// ── Browse-to-link overlay ──
+function openLinkBrowser() {
+  const overlay = document.getElementById('linkBrowserOverlay');
+  const cols = document.getElementById('linkBrowserCols');
+  const statuses = ['backlog', 'in_progress', 'review', 'done'];
+  const labels = { backlog: '📋 Backlog', in_progress: '⚡ In Progress', review: '👁 Review', done: '✓ Done' };
+  const eligible = items.filter(i => i.id !== editingId && !currentLinkedTasks.includes(i.id));
+
+  cols.innerHTML = statuses.map(s => {
+    const col = eligible.filter(i => i.status === s);
+    if (!col.length) return '';
+    return `<div class="lb-col">
+      <div class="lb-col-header">${labels[s]} <span class="lb-col-count">${col.length}</span></div>
+      ${col.map(i => `<div class="lb-card" onclick="confirmLinkFromBrowser('${i.id}')">
+        <div class="lb-card-id">#${i.id}</div>
+        <div class="lb-card-title">${escHtml(i.title)}</div>
+        <div class="lb-card-meta"><span class="badge badge-cat">${i.category||''}</span><span class="badge badge-priority-${i.priority}">${i.priority||''}</span></div>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+
+  overlay.style.display = 'flex';
+}
+
+function closeLinkBrowser() {
+  document.getElementById('linkBrowserOverlay').style.display = 'none';
+  document.getElementById('linkConfirmDialog').style.display = 'none';
+}
+
+function confirmLinkFromBrowser(targetId) {
+  const t = items.find(i => i.id === targetId);
+  if (!t) return;
+  const dialog = document.getElementById('linkConfirmDialog');
+  dialog.querySelector('.lc-task-id').textContent = '#' + t.id;
+  dialog.querySelector('.lc-task-title').textContent = t.title;
+  dialog.querySelector('.lc-confirm-btn').onclick = async () => {
+    dialog.style.display = 'none';
+    await linkTask(targetId);
+    closeLinkBrowser();
+  };
+  dialog.querySelector('.lc-cancel-btn').onclick = () => { dialog.style.display = 'none'; };
+  dialog.style.display = 'flex';
 }
 
 async function linkTask(linkedId) {
