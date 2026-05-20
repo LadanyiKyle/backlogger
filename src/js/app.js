@@ -8,6 +8,7 @@ let latestComments = {};
 let currentAttachments = [];
 let summaries = [];
 let currentTags = [];
+let currentLinkedTasks = [];
 const todayDate = new Date();
 calYear = todayDate.getFullYear(); calMonth = todayDate.getMonth();
 
@@ -70,10 +71,33 @@ async function loadItems() {
         if (!latestComments[c.task_id]) latestComments[c.task_id] = c.body;
       });
     }
+    // Load link relationships for card display
+    // _outLinks: tasks I linked TO (I initiated) → shown as L on my card
+    // _inLinks: tasks that linked TO me (they initiated) → shown as P on my card
+    const links = await sbRead('task_links', 'select=task_id,linked_task_id');
+    if (links && Array.isArray(links)) {
+      const outMap = {}, inMap = {};
+      links.forEach(l => {
+        if (!outMap[l.task_id]) outMap[l.task_id] = [];
+        outMap[l.task_id].push(l.linked_task_id);
+        if (!inMap[l.linked_task_id]) inMap[l.linked_task_id] = [];
+        inMap[l.linked_task_id].push(l.task_id);
+      });
+      items.forEach(i => {
+        i._outLinks = outMap[i.id] || [];  // L badges
+        i._inLinks  = inMap[i.id]  || [];  // P badges
+        i._linkedIds = [...new Set([...i._outLinks, ...i._inLinks])]; // for modal list
+        i._linkCount = i._outLinks.length + i._inLinks.length;
+      });
+    }
+    // Assign sequential 3-digit display IDs (#001, #002...) by creation order
+    const sorted = [...items].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    sorted.forEach((item, idx) => { item._seq = String(idx + 1).padStart(3, '0'); });
     setStatus('● live', 'var(--green)');
     // Auto-archive done tasks older than 7 days
     autoArchiveOldDone();
     populateTagFilter();
+    checkReminders();
     renderCurrent();
   } else {
     setStatus('⚠ offline', 'var(--red)');
@@ -93,6 +117,65 @@ async function autoArchiveOldDone() {
   if (toArchive.length) renderCurrent();
 }
 
+function checkReminders() {
+  const todayKey = 'reminders_dismissed_' + new Date().toISOString().substring(0, 10);
+  if (localStorage.getItem(todayKey)) { updateReminderBadge(0); return; }
+
+  const now = Date.now();
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+  const reminders = items.filter(i =>
+    (i.status === 'backlog' || i.status === 'in_progress') &&
+    i.deadline &&
+    (new Date(i.deadline).getTime() - now) <= sevenDays
+  );
+
+  if (!reminders.length) {
+    document.getElementById('reminderBanner').style.display = 'none';
+    updateReminderBadge(0);
+    return;
+  }
+
+  reminders.sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
+  const list = document.getElementById('reminderList');
+  list.innerHTML = reminders.map(t => {
+    const diff = new Date(t.deadline).getTime() - now;
+    const days = Math.ceil(diff / (24 * 60 * 60 * 1000));
+    let label, cls;
+    if (days < 0) { label = 'Overdue ' + Math.abs(days) + 'd'; cls = 'reminder-overdue'; }
+    else if (days === 0) { label = 'Due today'; cls = 'reminder-overdue'; }
+    else if (days === 1) { label = 'Due tomorrow'; cls = 'reminder-urgent'; }
+    else { label = 'Due in ' + days + ' days'; cls = 'reminder-soon'; }
+    return `<div class="reminder-item ${cls}" onclick="openModal('${t.id}')">
+      <span class="reminder-title">${escHtml(t.title)}</span>
+      <span class="badge badge-priority-${t.priority}">${t.priority}</span>
+      <span class="reminder-due">${label}</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('reminderBanner').style.display = 'block';
+  updateReminderBadge(reminders.length);
+}
+
+function dismissReminders() {
+  const todayKey = 'reminders_dismissed_' + new Date().toISOString().substring(0, 10);
+  localStorage.setItem(todayKey, '1');
+  document.getElementById('reminderBanner').style.display = 'none';
+  updateReminderBadge(0);
+}
+
+function updateReminderBadge(count) {
+  let badge = document.getElementById('reminderBadgeCount');
+  if (!badge) {
+    const btn = document.getElementById('tabKanban');
+    badge = document.createElement('span');
+    badge.id = 'reminderBadgeCount';
+    badge.className = 'reminder-badge-count';
+    btn.appendChild(badge);
+  }
+  if (count > 0) { badge.textContent = count; badge.style.display = 'inline-flex'; }
+  else { badge.style.display = 'none'; }
+}
+
 function getFiltered() {
   const q = (document.getElementById('searchInput').value || '').toLowerCase();
   const cat = document.getElementById('filterCat').value;
@@ -100,7 +183,7 @@ function getFiltered() {
   const tag = document.getElementById('filterTag').value;
   return items.filter(i => {
     if (i.status === 'archived') return false;
-    if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description||'').toLowerCase().indexOf(q) === -1) return false;
+    if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description||'').toLowerCase().indexOf(q) === -1 && !(i._seq && i._seq.includes(q))) return false;
     if (cat && i.category !== cat) return false;
     if (pri && i.priority !== pri) return false;
     if (tag && !(i.tags || []).includes(tag)) return false;
@@ -323,11 +406,25 @@ function cardHTML(item) {
   actions += `<button class="card-delete-btn" onclick="event.stopPropagation();deleteCardDirect('${item.id}')">🗑</button>`;
   const deadlineBadge = getDeadlineBadge(item);
   const overdueClass = isOverdue(item) ? ' card-overdue' : '';
+  // P badges: tasks that linked TO this card (they initiated)
+  const pBadges = (item._inLinks || []).map(pid => {
+    const pt = items.find(i => i.id === pid);
+    if (!pt) return '';
+    return `<span class="badge badge-relation badge-parent" onclick="event.stopPropagation();openModal('${pt.id}')" title="${escHtml(pt.title)}">P${pt._seq||pt.id}</span>`;
+  }).join('');
+  // L badges: tasks this card linked TO (I initiated)
+  const lBadges = (item._outLinks || []).map(lid => {
+    const lt = items.find(i => i.id === lid);
+    if (!lt) return '';
+    return `<span class="badge badge-relation badge-linked" onclick="event.stopPropagation();openModal('${lt.id}')" title="${escHtml(lt.title)}">L${lt._seq||lt.id}</span>`;
+  }).join('');
+  const relationRow = (pBadges || lBadges) ? `<div class="card-relations">${pBadges}${lBadges}</div>` : '';
   return `<div class="card${overdueClass}" data-id="${item.id}" onclick="openModal('${item.id}')">
-    <div class="card-title">${escHtml(item.title)}</div>
+    <div class="card-title-row"><span class="card-title">${escHtml(item.title)}</span><span class="card-id">#${item._seq||'—'}</span></div>
     <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span>${deadlineBadge}${(item.tags||[]).map(t => `<span class="badge badge-tag">${escHtml(t)}</span>`).join('')}</div>
     ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
     ${latestComments[item.id] ? `<div class="card-comment">💬 ${escHtml(latestComments[item.id])}</div>` : ''}
+    ${relationRow}
     <div class="card-actions">${actions}</div>
   </div>`;
 }
@@ -422,7 +519,7 @@ async function openModal(id) {
   editingId = id; currentComments = []; currentTimeLogs = []; currentActivity = [];
   if (id) {
     const item = items.find(i => i.id === id); if (!item) return;
-    document.getElementById('modalTitle').textContent = 'Edit Task';
+    document.getElementById('modalTitle').textContent = `Edit Task  #${item._seq||item.id}`;
     document.getElementById('fTitle').value = item.title || '';
     document.getElementById('fDescription').value = item.description || '';
     document.getElementById('fCategory').value = item.category || 'todo';
@@ -432,7 +529,7 @@ async function openModal(id) {
     currentTags = item.tags || [];
     renderTags();
     document.getElementById('btnDelete').style.display = 'inline-flex';
-    ['commentsSection','timelogSection','activitySection','attachmentsSection'].forEach(s => document.getElementById(s).style.display = 'flex');
+    ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection','linkedTasksSection'].forEach(s => document.getElementById(s).style.display = 'flex');
     renderDeadlineDisplay(item);
     const [comments, timelogs, activity, attachments] = await Promise.all([
       sbRead('comments', `task_id=eq.${id}&order=created_at.asc`),
@@ -442,6 +539,10 @@ async function openModal(id) {
     ]);
     currentComments = comments || []; currentTimeLogs = timelogs || []; currentActivity = activity || []; currentAttachments = attachments || [];
     renderComments(); renderTimeLogs(); renderActivity(); renderAttachments();
+    // Load linked tasks (outbound only — tasks this task linked to)
+    const links = await sbRead('task_links', `task_id=eq.${id}&select=linked_task_id`);
+    currentLinkedTasks = (links || []).map(l => l.linked_task_id);
+    renderLinkedTasks();
   } else {
     document.getElementById('modalTitle').textContent = 'New Task';
     ['fTitle','fDescription','fSource'].forEach(f => document.getElementById(f).value = f === 'fSource' ? 'Manual' : '');
@@ -451,7 +552,7 @@ async function openModal(id) {
     document.getElementById('btnDelete').style.display = 'none';
     currentTags = [];
     renderTags();
-    ['commentsSection','timelogSection','activitySection','attachmentsSection'].forEach(s => document.getElementById(s).style.display = 'none');
+    ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection','linkedTasksSection'].forEach(s => document.getElementById(s).style.display = 'none');
     renderDeadlineDisplay(null);
   }
   document.getElementById('modalOverlay').style.display = 'flex';
@@ -599,15 +700,35 @@ function renderComments() {
   }
 }
 
-async function addComment() {
-  const input = document.getElementById('commentInput');
-  const body = input.value.trim(); if (!body || !editingId) return;
-  input.value = '';
-  const result = await sbWrite('comments', 'POST', null, { task_id: editingId, body, author: 'Kyle' });
-  if (result && result[0]) currentComments.push(result[0]);
-  latestComments[editingId] = body;
-  logActivity(editingId, 'commented', body.substring(0, 60));
-  renderComments();
+// addComment() removed — comments are now posted via logAndPost() in the unified Log & Post section
+
+async function logAndPost() {
+  if (!editingId) return;
+  const comment = document.getElementById('logComment').value.trim();
+  const minutes = accumMinutes;
+  if (!comment && minutes <= 0) return;
+  try {
+    if (minutes > 0) {
+      const now = new Date().toISOString();
+      const entry = { task_id: editingId, duration_minutes: minutes, logged: false, created_at: now, started_at: now, ended_at: now };
+      const result = await sbWrite('time_logs', 'POST', null, entry);
+      if (result && result[0]) currentTimeLogs.push(result[0]);
+      else currentTimeLogs.push(entry);
+      logActivity(editingId, 'time logged', formatDuration(minutes));
+      resetAccumTime();
+      renderTimeLogs();
+    }
+    if (comment) {
+      const result = await sbWrite('comments', 'POST', null, { task_id: editingId, body: comment, author: 'Kyle' });
+      if (result && result[0]) currentComments.push(result[0]);
+      latestComments[editingId] = comment;
+      logActivity(editingId, 'commented', comment.substring(0, 60));
+      renderComments();
+      document.getElementById('logComment').value = '';
+    }
+    setStatus('✓ logged', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+    renderCurrent();
+  } catch(e) { alert('Failed: ' + e.message); }
 }
 
 function renderTimeLogs() {
@@ -655,7 +776,6 @@ async function commitTime() {
     setStatus('✓ +' + formatDuration(minutes), 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
   } catch(e) { alert('Failed to log time: ' + e.message); }
 }
-
 async function logActivity(taskId, action, detail) {
   try { await sbWrite('activity', 'POST', null, { task_id: taskId, action, detail }); } catch(e) {}
 }
@@ -741,6 +861,113 @@ function populateTagFilter() {
   const current = select.value;
   select.innerHTML = '<option value="">All tags</option>' + [...allTags].sort().map(t => `<option${t===current?' selected':''}>${escHtml(t)}</option>`).join('');
 }
+
+// ── Parent Task ──
+// ── Linked Tasks ──
+function renderLinkedTasks() {
+  const el = document.getElementById('linkedTasksList');
+  if (!currentLinkedTasks.length) {
+    el.innerHTML = '<span style="color:var(--muted);font-size:12px">No linked tasks</span>';
+    return;
+  }
+  el.innerHTML = currentLinkedTasks.map(id => {
+    const t = items.find(i => i.id === id);
+    const label = t ? `<span class="search-result-id">#${t._seq||t.id}</span> ${escHtml(t.title)}` : id;
+    return `<span class="linked-task-pill">${label} <button onclick="unlinkTask('${id}')">×</button></span>`;
+  }).join('');
+}
+
+function searchLinkedTasks() {
+  const q = document.getElementById('linkSearchInput').value.toLowerCase().trim();
+  const el = document.getElementById('linkSearchResults');
+  if (!q) { el.innerHTML = ''; return; }
+  const results = items.filter(i =>
+    i.id !== editingId && !currentLinkedTasks.includes(i.id) &&
+    (i.title.toLowerCase().includes(q) || (i._seq && i._seq.includes(q)))
+  ).slice(0, 5);
+  el.innerHTML = results.map(i =>
+    `<div class="search-result-item" onclick="linkTask('${i.id}')"><span class="search-result-id">#${i._seq||i.id}</span> ${escHtml(i.title)}</div>`
+  ).join('') || '<div class="search-result-item" style="color:var(--muted)">No results</div>';
+}
+
+// ── Browse-to-link overlay ──
+function openLinkBrowser() {
+  const overlay = document.getElementById('linkBrowserOverlay');
+  const cols = document.getElementById('linkBrowserCols');
+  const statuses = ['backlog', 'in_progress', 'review', 'done'];
+  const labels = { backlog: '📋 Backlog', in_progress: '⚡ In Progress', review: '👁 Review', done: '✓ Done' };
+  const eligible = items.filter(i => i.id !== editingId && !currentLinkedTasks.includes(i.id));
+
+  cols.innerHTML = statuses.map(s => {
+    const col = eligible.filter(i => i.status === s);
+    if (!col.length) return '';
+    return `<div class="lb-col">
+      <div class="lb-col-header">${labels[s]} <span class="lb-col-count">${col.length}</span></div>
+      ${col.map(i => `<div class="lb-card" onclick="confirmLinkFromBrowser('${i.id}')">
+        <div class="lb-card-id">#${i._seq||i.id}</div>
+        <div class="lb-card-title">${escHtml(i.title)}</div>
+        <div class="lb-card-meta"><span class="badge badge-cat">${i.category||''}</span><span class="badge badge-priority-${i.priority}">${i.priority||''}</span></div>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+
+  overlay.style.display = 'flex';
+}
+
+function closeLinkBrowser() {
+  document.getElementById('linkBrowserOverlay').style.display = 'none';
+  document.getElementById('linkConfirmDialog').style.display = 'none';
+}
+
+function confirmLinkFromBrowser(targetId) {
+  const t = items.find(i => i.id === targetId);
+  if (!t) return;
+  const dialog = document.getElementById('linkConfirmDialog');
+  dialog.querySelector('.lc-task-id').textContent = '#' + (t._seq || t.id);
+  dialog.querySelector('.lc-task-title').textContent = t.title;
+  dialog.querySelector('.lc-confirm-btn').onclick = async () => {
+    dialog.style.display = 'none';
+    await linkTask(targetId);
+    closeLinkBrowser();
+  };
+  dialog.querySelector('.lc-cancel-btn').onclick = () => { dialog.style.display = 'none'; };
+  dialog.style.display = 'flex';
+}
+
+async function linkTask(linkedId) {
+  if (!editingId) return;
+  try {
+    // Only write the outbound row — editingId is the initiator (parent of link)
+    await sbWrite('task_links', 'POST', null, { task_id: editingId, linked_task_id: linkedId });
+    currentLinkedTasks.push(linkedId);
+    // Update in-memory: editingId gains an outLink, linkedId gains an inLink
+    const a = items.find(i => i.id === editingId);
+    const b = items.find(i => i.id === linkedId);
+    if (a) { a._outLinks = a._outLinks || []; if (!a._outLinks.includes(linkedId)) a._outLinks.push(linkedId); }
+    if (b) { b._inLinks  = b._inLinks  || []; if (!b._inLinks.includes(editingId))  b._inLinks.push(editingId); }
+    renderLinkedTasks();
+    renderCurrent();
+    document.getElementById('linkSearchInput').value = '';
+    document.getElementById('linkSearchResults').innerHTML = '';
+  } catch(e) { alert('Failed to link: ' + e.message); }
+}
+
+async function unlinkTask(linkedId) {
+  if (!editingId) return;
+  try {
+    // Delete the single outbound row
+    await fetch(`${SB_URL}/rest/v1/task_links?task_id=eq.${editingId}&linked_task_id=eq.${linkedId}`, { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } });
+    currentLinkedTasks = currentLinkedTasks.filter(id => id !== linkedId);
+    // Update in-memory
+    const a = items.find(i => i.id === editingId);
+    const b = items.find(i => i.id === linkedId);
+    if (a) { a._outLinks = (a._outLinks || []).filter(id => id !== linkedId); }
+    if (b) { b._inLinks  = (b._inLinks  || []).filter(id => id !== editingId); }
+    renderLinkedTasks();
+    renderCurrent();
+  } catch(e) { alert('Failed to unlink: ' + e.message); }
+}
+
 
 function switchView(v) {
   currentView = v;
