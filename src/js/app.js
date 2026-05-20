@@ -8,6 +8,8 @@ let latestComments = {};
 let currentAttachments = [];
 let summaries = [];
 let currentTags = [];
+let currentLinkedTasks = [];
+let currentParentId = null;
 const todayDate = new Date();
 calYear = todayDate.getFullYear(); calMonth = todayDate.getMonth();
 
@@ -69,6 +71,13 @@ async function loadItems() {
       comments.forEach(c => {
         if (!latestComments[c.task_id]) latestComments[c.task_id] = c.body;
       });
+    }
+    // Load link counts
+    const links = await sbRead('task_links', 'select=task_id');
+    if (links && Array.isArray(links)) {
+      const linkCounts = {};
+      links.forEach(l => { linkCounts[l.task_id] = (linkCounts[l.task_id] || 0) + 1; });
+      items.forEach(i => { i._linkCount = linkCounts[i.id] || 0; });
     }
     setStatus('● live', 'var(--green)');
     // Auto-archive done tasks older than 7 days
@@ -383,11 +392,18 @@ function cardHTML(item) {
   actions += `<button class="card-delete-btn" onclick="event.stopPropagation();deleteCardDirect('${item.id}')">🗑</button>`;
   const deadlineBadge = getDeadlineBadge(item);
   const overdueClass = isOverdue(item) ? ' card-overdue' : '';
+  const subtaskCount = items.filter(i => i.parent_id === item.id).length;
+  const linkCount = item._linkCount || 0;
   return `<div class="card${overdueClass}" data-id="${item.id}" onclick="openModal('${item.id}')">
     <div class="card-title">${escHtml(item.title)}</div>
     <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span>${deadlineBadge}${(item.tags||[]).map(t => `<span class="badge badge-tag">${escHtml(t)}</span>`).join('')}</div>
     ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
     ${latestComments[item.id] ? `<div class="card-comment">💬 ${escHtml(latestComments[item.id])}</div>` : ''}
+    <div class="card-badges">
+      ${subtaskCount ? `<span class="badge badge-subtask" onclick="event.stopPropagation();toggleSubtasks('${item.id}')">◆ ${subtaskCount} subtask${subtaskCount>1?'s':''}</span>` : ''}
+      ${linkCount ? `<span class="badge badge-link">🔗 ${linkCount} link${linkCount>1?'s':''}</span>` : ''}
+    </div>
+    <div class="subtask-list" id="subtasks-${item.id}" style="display:none"></div>
     <div class="card-actions">${actions}</div>
   </div>`;
 }
@@ -492,7 +508,7 @@ async function openModal(id) {
     currentTags = item.tags || [];
     renderTags();
     document.getElementById('btnDelete').style.display = 'inline-flex';
-    ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection'].forEach(s => document.getElementById(s).style.display = 'flex');
+    ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection','parentTaskSection','linkedTasksSection'].forEach(s => document.getElementById(s).style.display = 'flex');
     renderDeadlineDisplay(item);
     const [comments, timelogs, activity, attachments] = await Promise.all([
       sbRead('comments', `task_id=eq.${id}&order=created_at.asc`),
@@ -502,6 +518,12 @@ async function openModal(id) {
     ]);
     currentComments = comments || []; currentTimeLogs = timelogs || []; currentActivity = activity || []; currentAttachments = attachments || [];
     renderComments(); renderTimeLogs(); renderActivity(); renderAttachments();
+    // Load parent and linked tasks
+    currentParentId = item.parent_id || null;
+    renderParentTask();
+    const links = await sbRead('task_links', `task_id=eq.${id}&select=linked_task_id`);
+    currentLinkedTasks = (links || []).map(l => l.linked_task_id);
+    renderLinkedTasks();
   } else {
     document.getElementById('modalTitle').textContent = 'New Task';
     ['fTitle','fDescription','fSource'].forEach(f => document.getElementById(f).value = f === 'fSource' ? 'Manual' : '');
@@ -511,7 +533,7 @@ async function openModal(id) {
     document.getElementById('btnDelete').style.display = 'none';
     currentTags = [];
     renderTags();
-    ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection'].forEach(s => document.getElementById(s).style.display = 'none');
+    ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection','parentTaskSection','linkedTasksSection'].forEach(s => document.getElementById(s).style.display = 'none');
     renderDeadlineDisplay(null);
   }
   document.getElementById('modalOverlay').style.display = 'flex';
@@ -581,6 +603,7 @@ async function saveTask() {
     category: document.getElementById('fCategory').value, priority: document.getElementById('fPriority').value,
     status: document.getElementById('fStatus').value, source: document.getElementById('fSource').value.trim(),
     tags: currentTags,
+    parent_id: currentParentId || null,
     updated_at: new Date().toISOString()
   };
   try {
@@ -828,6 +851,107 @@ function populateTagFilter() {
   const select = document.getElementById('filterTag');
   const current = select.value;
   select.innerHTML = '<option value="">All tags</option>' + [...allTags].sort().map(t => `<option${t===current?' selected':''}>${escHtml(t)}</option>`).join('');
+}
+
+// ── Parent Task ──
+function renderParentTask() {
+  const el = document.getElementById('parentTaskDisplay');
+  if (!currentParentId) {
+    el.innerHTML = '<span style="color:var(--muted);font-size:12px">No parent task</span>';
+    return;
+  }
+  const parent = items.find(i => i.id === currentParentId);
+  const title = parent ? escHtml(parent.title) : currentParentId;
+  el.innerHTML = `<span class="linked-task-pill">${title} <button onclick="removeParent()">×</button></span>`;
+}
+
+function searchParentTasks() {
+  const q = document.getElementById('parentSearchInput').value.toLowerCase().trim();
+  const el = document.getElementById('parentSearchResults');
+  if (!q) { el.innerHTML = ''; return; }
+  const children = items.filter(i => i.parent_id === editingId).map(i => i.id);
+  const results = items.filter(i =>
+    i.id !== editingId && !children.includes(i.id) &&
+    i.title.toLowerCase().includes(q)
+  ).slice(0, 5);
+  el.innerHTML = results.map(i =>
+    `<div class="search-result-item" onclick="selectParent('${i.id}')">${escHtml(i.title)}</div>`
+  ).join('') || '<div class="search-result-item" style="color:var(--muted)">No results</div>';
+}
+
+function selectParent(id) {
+  currentParentId = id;
+  renderParentTask();
+  document.getElementById('parentSearchInput').value = '';
+  document.getElementById('parentSearchResults').innerHTML = '';
+}
+
+function removeParent() {
+  currentParentId = null;
+  renderParentTask();
+}
+
+// ── Linked Tasks ──
+function renderLinkedTasks() {
+  const el = document.getElementById('linkedTasksList');
+  if (!currentLinkedTasks.length) {
+    el.innerHTML = '<span style="color:var(--muted);font-size:12px">No linked tasks</span>';
+    return;
+  }
+  el.innerHTML = currentLinkedTasks.map(id => {
+    const t = items.find(i => i.id === id);
+    const title = t ? escHtml(t.title) : id;
+    return `<span class="linked-task-pill">${title} <button onclick="unlinkTask('${id}')">×</button></span>`;
+  }).join('');
+}
+
+function searchLinkedTasks() {
+  const q = document.getElementById('linkSearchInput').value.toLowerCase().trim();
+  const el = document.getElementById('linkSearchResults');
+  if (!q) { el.innerHTML = ''; return; }
+  const results = items.filter(i =>
+    i.id !== editingId && !currentLinkedTasks.includes(i.id) &&
+    i.title.toLowerCase().includes(q)
+  ).slice(0, 5);
+  el.innerHTML = results.map(i =>
+    `<div class="search-result-item" onclick="linkTask('${i.id}')">${escHtml(i.title)}</div>`
+  ).join('') || '<div class="search-result-item" style="color:var(--muted)">No results</div>';
+}
+
+async function linkTask(linkedId) {
+  if (!editingId) return;
+  try {
+    await sbWrite('task_links', 'POST', null, { task_id: editingId, linked_task_id: linkedId });
+    await sbWrite('task_links', 'POST', null, { task_id: linkedId, linked_task_id: editingId });
+    currentLinkedTasks.push(linkedId);
+    renderLinkedTasks();
+    document.getElementById('linkSearchInput').value = '';
+    document.getElementById('linkSearchResults').innerHTML = '';
+  } catch(e) { alert('Failed to link: ' + e.message); }
+}
+
+async function unlinkTask(linkedId) {
+  if (!editingId) return;
+  try {
+    await fetch(`${SB_URL}/rest/v1/task_links?task_id=eq.${editingId}&linked_task_id=eq.${linkedId}`, { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } });
+    await fetch(`${SB_URL}/rest/v1/task_links?task_id=eq.${linkedId}&linked_task_id=eq.${editingId}`, { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } });
+    currentLinkedTasks = currentLinkedTasks.filter(id => id !== linkedId);
+    renderLinkedTasks();
+  } catch(e) { alert('Failed to unlink: ' + e.message); }
+}
+
+// ── Subtask toggle on cards ──
+function toggleSubtasks(parentId) {
+  const el = document.getElementById('subtasks-' + parentId);
+  if (el.style.display === 'none') {
+    const subtasks = items.filter(i => i.parent_id === parentId);
+    el.innerHTML = subtasks.map(s =>
+      `<div class="subtask-item" onclick="event.stopPropagation();openModal('${s.id}')">${escHtml(s.title)}</div>`
+    ).join('');
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
 }
 
 function switchView(v) {
