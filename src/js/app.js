@@ -72,12 +72,18 @@ async function loadItems() {
         if (!latestComments[c.task_id]) latestComments[c.task_id] = c.body;
       });
     }
-    // Load link counts
-    const links = await sbRead('task_links', 'select=task_id');
+    // Load full link lists (both directions) for card display
+    const links = await sbRead('task_links', 'select=task_id,linked_task_id');
     if (links && Array.isArray(links)) {
-      const linkCounts = {};
-      links.forEach(l => { linkCounts[l.task_id] = (linkCounts[l.task_id] || 0) + 1; });
-      items.forEach(i => { i._linkCount = linkCounts[i.id] || 0; });
+      const linkMap = {}; // task_id -> [linked_task_id, ...]
+      links.forEach(l => {
+        if (!linkMap[l.task_id]) linkMap[l.task_id] = [];
+        linkMap[l.task_id].push(l.linked_task_id);
+      });
+      items.forEach(i => {
+        i._linkedIds = linkMap[i.id] || [];
+        i._linkCount = i._linkedIds.length;
+      });
     }
     // Assign sequential 3-digit display IDs (#001, #002...) by creation order
     const sorted = [...items].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -395,17 +401,31 @@ function cardHTML(item) {
   actions += `<button class="card-delete-btn" onclick="event.stopPropagation();deleteCardDirect('${item.id}')">🗑</button>`;
   const deadlineBadge = getDeadlineBadge(item);
   const overdueClass = isOverdue(item) ? ' card-overdue' : '';
+  // Parent badge
+  const parentItem = item.parent_id ? items.find(i => i.id === item.parent_id) : null;
+  const parentBadge = parentItem
+    ? `<span class="badge badge-relation badge-parent" onclick="event.stopPropagation();openModal('${parentItem.id}')" title="${escHtml(parentItem.title)}">P${parentItem._seq||parentItem.id}</span>`
+    : '';
+  // Linked task badges
+  const linkedIds = item._linkedIds || [];
+  const linkedBadges = linkedIds.map(lid => {
+    const lt = items.find(i => i.id === lid);
+    if (!lt) return '';
+    return `<span class="badge badge-relation badge-linked" onclick="event.stopPropagation();openModal('${lt.id}')" title="${escHtml(lt.title)}">L${lt._seq||lt.id}</span>`;
+  }).join('');
+  // Subtask count (keep existing toggle)
   const subtaskCount = items.filter(i => i.parent_id === item.id).length;
-  const linkCount = item._linkCount || 0;
+  const subtaskBadge = subtaskCount
+    ? `<span class="badge badge-subtask" onclick="event.stopPropagation();toggleSubtasks('${item.id}')">◆ ${subtaskCount} subtask${subtaskCount>1?'s':''}</span>`
+    : '';
+  const relationRow = (parentBadge || linkedBadges) ? `<div class="card-relations">${parentBadge}${linkedBadges}</div>` : '';
   return `<div class="card${overdueClass}" data-id="${item.id}" onclick="openModal('${item.id}')">
     <div class="card-title-row"><span class="card-title">${escHtml(item.title)}</span><span class="card-id">#${item._seq||'—'}</span></div>
     <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span>${deadlineBadge}${(item.tags||[]).map(t => `<span class="badge badge-tag">${escHtml(t)}</span>`).join('')}</div>
     ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
     ${latestComments[item.id] ? `<div class="card-comment">💬 ${escHtml(latestComments[item.id])}</div>` : ''}
-    <div class="card-badges">
-      ${subtaskCount ? `<span class="badge badge-subtask" onclick="event.stopPropagation();toggleSubtasks('${item.id}')">◆ ${subtaskCount} subtask${subtaskCount>1?'s':''}</span>` : ''}
-      ${linkCount ? `<span class="badge badge-link">🔗 ${linkCount} link${linkCount>1?'s':''}</span>` : ''}
-    </div>
+    <div class="card-badges">${subtaskBadge}</div>
+    ${relationRow}
     <div class="subtask-list" id="subtasks-${item.id}" style="display:none"></div>
     <div class="card-actions">${actions}</div>
   </div>`;
@@ -962,7 +982,13 @@ async function linkTask(linkedId) {
     await sbWrite('task_links', 'POST', null, { task_id: editingId, linked_task_id: linkedId });
     await sbWrite('task_links', 'POST', null, { task_id: linkedId, linked_task_id: editingId });
     currentLinkedTasks.push(linkedId);
+    // Update in-memory _linkedIds on both tasks so cards re-render correctly
+    const a = items.find(i => i.id === editingId);
+    const b = items.find(i => i.id === linkedId);
+    if (a) { a._linkedIds = a._linkedIds || []; if (!a._linkedIds.includes(linkedId)) a._linkedIds.push(linkedId); a._linkCount = a._linkedIds.length; }
+    if (b) { b._linkedIds = b._linkedIds || []; if (!b._linkedIds.includes(editingId)) b._linkedIds.push(editingId); b._linkCount = b._linkedIds.length; }
     renderLinkedTasks();
+    renderCurrent();
     document.getElementById('linkSearchInput').value = '';
     document.getElementById('linkSearchResults').innerHTML = '';
   } catch(e) { alert('Failed to link: ' + e.message); }
@@ -974,7 +1000,13 @@ async function unlinkTask(linkedId) {
     await fetch(`${SB_URL}/rest/v1/task_links?task_id=eq.${editingId}&linked_task_id=eq.${linkedId}`, { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } });
     await fetch(`${SB_URL}/rest/v1/task_links?task_id=eq.${linkedId}&linked_task_id=eq.${editingId}`, { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } });
     currentLinkedTasks = currentLinkedTasks.filter(id => id !== linkedId);
+    // Update in-memory _linkedIds on both tasks
+    const a = items.find(i => i.id === editingId);
+    const b = items.find(i => i.id === linkedId);
+    if (a) { a._linkedIds = (a._linkedIds || []).filter(id => id !== linkedId); a._linkCount = a._linkedIds.length; }
+    if (b) { b._linkedIds = (b._linkedIds || []).filter(id => id !== editingId); b._linkCount = b._linkedIds.length; }
     renderLinkedTasks();
+    renderCurrent();
   } catch(e) { alert('Failed to unlink: ' + e.message); }
 }
 

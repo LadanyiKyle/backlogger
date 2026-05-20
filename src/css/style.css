@@ -126,6 +126,12 @@ details[open] .expand-toggle::before { content: '▾ '; }
 .card-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
 .card-title-row .card-title { flex: 1; margin-bottom: 0; }
 .card-id { font-size: 10px; color: var(--muted); font-family: monospace; flex-shrink: 0; margin-top: 2px; }
+.card-relations { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.badge-relation { font-family: monospace; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; cursor: pointer; letter-spacing: 0.03em; }
+.badge-parent { background: rgba(234,179,8,0.15); color: #fde68a; border: 1px solid rgba(234,179,8,0.3); }
+.badge-parent:hover { background: rgba(234,179,8,0.3); }
+.badge-linked { background: rgba(99,102,241,0.15); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.3); }
+.badge-linked:hover { background: rgba(99,102,241,0.3); }
 .search-result-id { font-size: 10px; color: var(--muted); font-family: monospace; margin-right: 4px; }
 .lb-col { min-width: 220px; max-width: 260px; flex-shrink: 0; }
 .lb-col-header { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
