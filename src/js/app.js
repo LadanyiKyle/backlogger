@@ -79,6 +79,9 @@ async function loadItems() {
       links.forEach(l => { linkCounts[l.task_id] = (linkCounts[l.task_id] || 0) + 1; });
       items.forEach(i => { i._linkCount = linkCounts[i.id] || 0; });
     }
+    // Assign sequential 3-digit display IDs (#001, #002...) by creation order
+    const sorted = [...items].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    sorted.forEach((item, idx) => { item._seq = String(idx + 1).padStart(3, '0'); });
     setStatus('● live', 'var(--green)');
     // Auto-archive done tasks older than 7 days
     autoArchiveOldDone();
@@ -395,7 +398,7 @@ function cardHTML(item) {
   const subtaskCount = items.filter(i => i.parent_id === item.id).length;
   const linkCount = item._linkCount || 0;
   return `<div class="card${overdueClass}" data-id="${item.id}" onclick="openModal('${item.id}')">
-    <div class="card-title-row"><span class="card-title">${escHtml(item.title)}</span><span class="card-id">#${item.id}</span></div>
+    <div class="card-title-row"><span class="card-title">${escHtml(item.title)}</span><span class="card-id">#${item._seq||'—'}</span></div>
     <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span>${deadlineBadge}${(item.tags||[]).map(t => `<span class="badge badge-tag">${escHtml(t)}</span>`).join('')}</div>
     ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
     ${latestComments[item.id] ? `<div class="card-comment">💬 ${escHtml(latestComments[item.id])}</div>` : ''}
@@ -498,7 +501,7 @@ async function openModal(id) {
   editingId = id; currentComments = []; currentTimeLogs = []; currentActivity = [];
   if (id) {
     const item = items.find(i => i.id === id); if (!item) return;
-    document.getElementById('modalTitle').textContent = 'Edit Task';
+    document.getElementById('modalTitle').textContent = `Edit Task  #${item._seq||item.id}`;
     document.getElementById('fTitle').value = item.title || '';
     document.getElementById('fDescription').value = item.description || '';
     document.getElementById('fCategory').value = item.category || 'todo';
@@ -852,8 +855,8 @@ function renderParentTask() {
     return;
   }
   const parent = items.find(i => i.id === currentParentId);
-  const title = parent ? escHtml(parent.title) : currentParentId;
-  el.innerHTML = `<span class="linked-task-pill">${title} <button onclick="removeParent()">×</button></span>`;
+  const label = parent ? `<span class="search-result-id">#${parent._seq||parent.id}</span> ${escHtml(parent.title)}` : currentParentId;
+  el.innerHTML = `<span class="linked-task-pill">${label} <button onclick="removeParent()">×</button></span>`;
 }
 
 function searchParentTasks() {
@@ -863,10 +866,10 @@ function searchParentTasks() {
   const children = items.filter(i => i.parent_id === editingId).map(i => i.id);
   const results = items.filter(i =>
     i.id !== editingId && !children.includes(i.id) &&
-    i.title.toLowerCase().includes(q)
+    (i.title.toLowerCase().includes(q) || (i._seq && i._seq.includes(q)))
   ).slice(0, 5);
   el.innerHTML = results.map(i =>
-    `<div class="search-result-item" onclick="selectParent('${i.id}')">${escHtml(i.title)}</div>`
+    `<div class="search-result-item" onclick="selectParent('${i.id}')"><span class="search-result-id">#${i._seq||i.id}</span> ${escHtml(i.title)}</div>`
   ).join('') || '<div class="search-result-item" style="color:var(--muted)">No results</div>';
 }
 
@@ -891,8 +894,8 @@ function renderLinkedTasks() {
   }
   el.innerHTML = currentLinkedTasks.map(id => {
     const t = items.find(i => i.id === id);
-    const title = t ? escHtml(t.title) : id;
-    return `<span class="linked-task-pill">${title} <button onclick="unlinkTask('${id}')">×</button></span>`;
+    const label = t ? `<span class="search-result-id">#${t._seq||t.id}</span> ${escHtml(t.title)}` : id;
+    return `<span class="linked-task-pill">${label} <button onclick="unlinkTask('${id}')">×</button></span>`;
   }).join('');
 }
 
@@ -902,10 +905,10 @@ function searchLinkedTasks() {
   if (!q) { el.innerHTML = ''; return; }
   const results = items.filter(i =>
     i.id !== editingId && !currentLinkedTasks.includes(i.id) &&
-    (i.title.toLowerCase().includes(q) || i.id.toLowerCase().includes(q))
+    (i.title.toLowerCase().includes(q) || (i._seq && i._seq.includes(q)))
   ).slice(0, 5);
   el.innerHTML = results.map(i =>
-    `<div class="search-result-item" onclick="linkTask('${i.id}')"><span class="search-result-id">#${i.id}</span> ${escHtml(i.title)}</div>`
+    `<div class="search-result-item" onclick="linkTask('${i.id}')"><span class="search-result-id">#${i._seq||i.id}</span> ${escHtml(i.title)}</div>`
   ).join('') || '<div class="search-result-item" style="color:var(--muted)">No results</div>';
 }
 
@@ -923,7 +926,7 @@ function openLinkBrowser() {
     return `<div class="lb-col">
       <div class="lb-col-header">${labels[s]} <span class="lb-col-count">${col.length}</span></div>
       ${col.map(i => `<div class="lb-card" onclick="confirmLinkFromBrowser('${i.id}')">
-        <div class="lb-card-id">#${i.id}</div>
+        <div class="lb-card-id">#${i._seq||i.id}</div>
         <div class="lb-card-title">${escHtml(i.title)}</div>
         <div class="lb-card-meta"><span class="badge badge-cat">${i.category||''}</span><span class="badge badge-priority-${i.priority}">${i.priority||''}</span></div>
       </div>`).join('')}
@@ -942,7 +945,7 @@ function confirmLinkFromBrowser(targetId) {
   const t = items.find(i => i.id === targetId);
   if (!t) return;
   const dialog = document.getElementById('linkConfirmDialog');
-  dialog.querySelector('.lc-task-id').textContent = '#' + t.id;
+  dialog.querySelector('.lc-task-id').textContent = '#' + (t._seq || t.id);
   dialog.querySelector('.lc-task-title').textContent = t.title;
   dialog.querySelector('.lc-confirm-btn').onclick = async () => {
     dialog.style.display = 'none';
