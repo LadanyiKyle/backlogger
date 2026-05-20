@@ -183,7 +183,7 @@ function getFiltered() {
   const tag = document.getElementById('filterTag').value;
   return items.filter(i => {
     if (i.status === 'archived') return false;
-    if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description||'').toLowerCase().indexOf(q) === -1) return false;
+    if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description||'').toLowerCase().indexOf(q) === -1 && !(i._seq && i._seq.includes(q))) return false;
     if (cat && i.category !== cat) return false;
     if (pri && i.priority !== pri) return false;
     if (tag && !(i.tags || []).includes(tag)) return false;
