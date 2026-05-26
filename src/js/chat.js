@@ -351,6 +351,7 @@ async function executeAction(action) {
     };
     const result = await sbWrite('tasks', 'POST', null, task);
     const created = result && result[0] ? result[0] : task;
+    created._seenByUser = false;
     items.unshift(created);
     renderCurrent();
     return `Task created: "${task.title}"`;
@@ -371,7 +372,9 @@ async function executeAction(action) {
         updated_at: new Date().toISOString()
       };
       const result = await sbWrite('tasks', 'POST', null, task);
-      items.unshift(result && result[0] ? result[0] : task);
+      const created = result && result[0] ? result[0] : task;
+      created._seenByUser = false;
+      items.unshift(created);
       count++;
     }
     renderCurrent();

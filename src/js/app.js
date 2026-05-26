@@ -9,6 +9,7 @@ let currentAttachments = [];
 let summaries = [];
 let currentTags = [];
 let currentLinkedTasks = [];
+let outlookEvents = [];
 const todayDate = new Date();
 calYear = todayDate.getFullYear(); calMonth = todayDate.getMonth();
 
@@ -56,14 +57,16 @@ function setStatus(txt, color) {
 
 async function loadItems() {
   setStatus('⏳ loading...', 'var(--muted)');
-  const [data, comments, summaryData] = await Promise.all([
+  const [data, comments, summaryData, outlookData] = await Promise.all([
     sbRead('tasks', 'select=*&order=created_at.desc'),
     sbRead('comments', 'select=task_id,body,created_at&order=created_at.desc'),
-    sbRead('summaries', 'select=*&order=created_at.desc&status=eq.unread')
+    sbRead('summaries', 'select=*&order=created_at.desc&status=eq.unread'),
+    sbRead('outlook_events', 'select=*&order=start_at.asc')
   ]);
   if (data && Array.isArray(data)) {
     items = data;
     summaries = (summaryData && Array.isArray(summaryData)) ? summaryData : [];
+    outlookEvents = (outlookData && Array.isArray(outlookData)) ? outlookData.filter(e => !e.is_cancelled) : [];
     // Build map of latest comment per task
     latestComments = {};
     if (comments && Array.isArray(comments)) {
@@ -370,6 +373,7 @@ function cardHTML(item) {
   actions += `<button class="card-delete-btn" onclick="event.stopPropagation();deleteCardDirect('${item.id}')">🗑</button>`;
   const deadlineBadge = getDeadlineBadge(item);
   const overdueClass = isOverdue(item) ? ' card-overdue' : '';
+  const aiNewClass = item.source === 'AI Chat' && !item._seenByUser ? ' card-ai-new' : '';
   // P badges: tasks that linked TO this card (they initiated)
   const pBadges = (item._inLinks || []).map(pid => {
     const pt = items.find(i => i.id === pid);
@@ -383,7 +387,7 @@ function cardHTML(item) {
     return `<span class="badge badge-relation badge-linked" onclick="event.stopPropagation();openModal('${lt.id}')" title="${escHtml(lt.title)}">L${lt._seq||lt.id}</span>`;
   }).join('');
   const relationRow = (pBadges || lBadges) ? `<div class="card-relations">${pBadges}${lBadges}</div>` : '';
-  return `<div class="card${overdueClass}" data-id="${item.id}" onclick="openModal('${item.id}')">
+  return `<div class="card${overdueClass}${aiNewClass}" data-id="${item.id}" onclick="openModal('${item.id}')">
     <div class="card-title-row"><span class="card-title">${escHtml(item.title)}</span><span class="card-id">#${item._seq||'—'}</span></div>
     <div class="card-meta"><span class="badge badge-cat">${item.category||''}</span><span class="badge badge-priority-${item.priority}">${item.priority||''}</span>${deadlineBadge}${(item.tags||[]).map(t => `<span class="badge badge-tag">${escHtml(t)}</span>`).join('')}</div>
     ${item.source ? `<div class="card-source">📎 ${escHtml(item.source)}</div>` : ''}
@@ -483,6 +487,11 @@ async function openModal(id) {
   editingId = id; currentComments = []; currentTimeLogs = []; currentActivity = [];
   if (id) {
     const item = items.find(i => i.id === id); if (!item) return;
+    // Clear AI-new purple border on first open
+    if (item.source === 'AI Chat' && !item._seenByUser) {
+      item._seenByUser = true;
+      renderCurrent();
+    }
     document.getElementById('modalTitle').textContent = `Edit Task  #${item._seq||item.id}`;
     document.getElementById('fTitle').value = item.title || '';
     document.getElementById('fDescription').value = item.description || '';
@@ -978,6 +987,11 @@ function calItemHTML(it) {
   return `<div class="${cls}" onclick="openModal('${it.id}')" title="${escHtml(it.title)}">${escHtml(it.title)}</div>`;
 }
 
+function calOutlookItemHTML(e) {
+  const time = new Date(e.start_at).toLocaleTimeString('en-ZA', {hour:'2-digit',minute:'2-digit'});
+  return `<div class="cal-item cal-item-outlook" onclick="window.open('${e.web_link||'#'}','_blank')" title="${escHtml(e.subject)}">📅 ${time} ${escHtml(e.subject)}</div>`;
+}
+
 function renderCalMonth() {
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   document.getElementById('calTitle').textContent = months[calMonth] + ' ' + calYear;
@@ -997,10 +1011,12 @@ function renderCalMonth() {
     const dateStr = ay + '-' + String(am+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
     const isToday = dateStr === todayStr;
     const dayItems = items.filter(it => it.status !== 'archived' && getTaskDate(it) === dateStr);
+    const dayOutlook = outlookEvents.filter(e => e.start_at && e.start_at.substring(0,10) === dateStr);
+    const allItems = [...dayOutlook.map(e => ({ _outlook: true, ...e })), ...dayItems];
     cells += `<div class="cal-cell${isOther?' other-month':''}${isToday?' today':''}">
       <div class="cal-date">${day}</div>
-      ${dayItems.slice(0,3).map(it => calItemHTML(it)).join('')}
-      ${dayItems.length > 3 ? `<div style="font-size:10px;color:var(--muted)">+${dayItems.length-3} more</div>` : ''}
+      ${allItems.slice(0,3).map(it => it._outlook ? calOutlookItemHTML(it) : calItemHTML(it)).join('')}
+      ${allItems.length > 3 ? `<div style="font-size:10px;color:var(--muted)">+${allItems.length-3} more</div>` : ''}
     </div>`;
   }
   grid.innerHTML = cells;
@@ -1027,10 +1043,12 @@ function renderCalWeek() {
     const dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
     const isToday = dateStr === todayStr;
     const dayItems = items.filter(it => it.status !== 'archived' && getTaskDate(it) === dateStr);
+    const dayOutlook = outlookEvents.filter(e => e.start_at && e.start_at.substring(0,10) === dateStr);
+    const allWeekItems = [...dayOutlook.map(e => ({ _outlook: true, ...e })), ...dayItems];
     headerHTML += `<div class="cal-day-name${isToday?' cal-day-today':''}">${dayNames[i]} ${d.getDate()}</div>`;
     gridHTML += `<div class="cal-week-cell${isToday?' today':''}">
-      ${dayItems.map(it => calItemHTML(it)).join('')}
-      ${!dayItems.length ? '<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px 0">—</div>' : ''}
+      ${allWeekItems.map(it => it._outlook ? calOutlookItemHTML(it) : calItemHTML(it)).join('')}
+      ${!allWeekItems.length ? '<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px 0">—</div>' : ''}
     </div>`;
   }
   document.getElementById('calWeekHeader').innerHTML = headerHTML;
@@ -1044,12 +1062,30 @@ function renderCalDay() {
   document.getElementById('calTitle').textContent = dayName;
 
   const dayItems = items.filter(it => it.status !== 'archived' && getTaskDate(it) === dateStr);
+  const dayOutlook = outlookEvents.filter(e => e.start_at && e.start_at.substring(0,10) === dateStr);
   const el = document.getElementById('calDayView');
-  if (!dayItems.length) {
-    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">No tasks for this day</div>';
+  if (!dayItems.length && !dayOutlook.length) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">No tasks or meetings for this day</div>';
     return;
   }
-  el.innerHTML = dayItems.map(it => {
+  // Sort outlook events by start time, then tasks
+  const outlookHTML = dayOutlook.sort((a,b) => new Date(a.start_at)-new Date(b.start_at)).map(e => {
+    const startTime = new Date(e.start_at).toLocaleTimeString('en-ZA', {hour:'2-digit',minute:'2-digit'});
+    const endTime = new Date(e.end_at).toLocaleTimeString('en-ZA', {hour:'2-digit',minute:'2-digit'});
+    const attendeeCount = Array.isArray(e.attendees) ? e.attendees.length : 0;
+    return `<div class="cal-day-item cal-day-item-outlook" onclick="window.open('${e.web_link||'#'}','_blank')">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:10px;background:rgba(59,130,246,0.2);color:#93c5fd;border-radius:4px;padding:1px 6px;font-weight:600">📅 Outlook</span>
+        <span class="cal-outlook-time">${startTime} – ${endTime}</span>
+      </div>
+      <div class="cal-day-item-title">${escHtml(e.subject)}</div>
+      <div class="cal-day-item-meta">
+        ${e.location ? `<span class="cal-outlook-loc">📍 ${escHtml(e.location)}</span>` : ''}
+        ${attendeeCount > 1 ? `<span class="cal-outlook-loc">👥 ${attendeeCount} attendees</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  const tasksHTML = dayItems.map(it => {
     const cls = !it.deadline ? '' : (new Date(it.deadline).getTime() < Date.now() ? ' cal-day-item-overdue' : ' cal-day-item-future');
     const deadline = it.deadline ? new Date(it.deadline).toLocaleTimeString('en-ZA', {hour:'2-digit',minute:'2-digit'}) : '';
     return `<div class="cal-day-item${cls}" onclick="openModal('${it.id}')">
@@ -1061,6 +1097,7 @@ function renderCalDay() {
       </div>
     </div>`;
   }).join('');
+  el.innerHTML = outlookHTML + (tasksHTML ? `<div style="margin-top:${dayOutlook.length?'12px':'0'}">${tasksHTML}</div>` : '');
 }
 
 function calPrev() {

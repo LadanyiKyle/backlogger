@@ -174,6 +174,16 @@ details[open] .expand-toggle::before { content: '▾ '; }
 #col-done .card:hover { opacity: 0.85; }
 .cal-item-overdue { background: rgba(249,115,22,0.25); color: #fdba74; }
 .cal-item-future { background: rgba(34,197,94,0.15); color: #86efac; }
+/* AI-created task — purple border until first opened */
+.card.card-ai-new { border-color: var(--accent2); box-shadow: 0 0 0 1px rgba(139,92,246,0.4); }
+.card.card-ai-new .card-id::before { content: '✦ '; color: var(--accent2); }
+/* Outlook calendar events */
+.cal-item-outlook { background: rgba(0,120,212,0.2); color: #93c5fd; border-left: 2px solid #3b82f6; }
+.cal-item-outlook:hover { background: rgba(0,120,212,0.35); }
+.cal-day-item-outlook { border-left: 3px solid #3b82f6; background: rgba(0,120,212,0.08); }
+.cal-day-item-outlook:hover { border-color: #60a5fa; }
+.cal-outlook-time { font-size: 11px; color: #93c5fd; font-weight: 600; }
+.cal-outlook-loc { font-size: 11px; color: var(--muted); }
 .cal-week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .cal-week-cell { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; min-height: 200px; padding: 8px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
 .cal-week-cell.today { border-color: var(--accent); }
