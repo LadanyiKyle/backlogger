@@ -551,11 +551,16 @@ function prefillDeadline(days) {
 }
 
 async function saveDeadlineFromPicker() {
-  if (!editingId) return;
   const picker = document.getElementById('deadlinePicker');
   const val = picker.value;
   if (!val) { alert('Please select a date and time first'); return; }
   const deadline = new Date(val).toISOString();
+  // For new tasks (no editingId yet), just update the display — deadline saved on saveTask()
+  if (!editingId) {
+    renderDeadlineDisplay({ deadline });
+    setStatus('✓ deadline staged', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+    return;
+  }
   try {
     await sbWrite('tasks', 'PATCH', editingId, { deadline, updated_at: new Date().toISOString() });
     const idx = items.findIndex(i => i.id === editingId);
@@ -581,11 +586,13 @@ async function clearDeadline() {
 async function saveTask() {
   const title = document.getElementById('fTitle').value.trim();
   if (!title) { alert('Title is required'); return; }
+  const deadlineVal = document.getElementById('deadlinePicker').value;
   const payload = {
     title, description: document.getElementById('fDescription').value.trim(),
     category: document.getElementById('fCategory').value, priority: document.getElementById('fPriority').value,
     status: document.getElementById('fStatus').value, source: document.getElementById('fSource').value.trim(),
     tags: currentTags,
+    deadline: deadlineVal ? new Date(deadlineVal).toISOString() : null,
     updated_at: new Date().toISOString()
   };
   try {
