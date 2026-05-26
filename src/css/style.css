@@ -184,8 +184,8 @@ details[open] .expand-toggle::before { content: '▾ '; }
 .cal-day-item-outlook:hover { border-color: #60a5fa; }
 .cal-outlook-time { font-size: 11px; color: #93c5fd; font-weight: 600; }
 .cal-outlook-loc { font-size: 11px; color: var(--muted); }
-.cal-week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; align-items: start; }
-.cal-week-cell { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; min-height: 320px; padding: 8px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.cal-week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; align-items: stretch; }
+.cal-week-cell { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; min-height: 560px; padding: 8px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
 .cal-week-cell.today { border-color: var(--accent); }
 .cal-item-expanded { padding: 7px 9px !important; white-space: normal !important; overflow: visible !important; text-overflow: unset !important; }
 .cal-item-title { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.35; margin-bottom: 3px; white-space: normal; word-break: break-word; }
