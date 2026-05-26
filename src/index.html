@@ -54,6 +54,10 @@
     <div class="col-header"><span>⚡ In Progress</span><span class="col-count" id="cnt-in_progress">0</span></div>
     <div class="col-body" id="body-in_progress"></div>
   </div>
+  <div class="column" id="col-action" ondragover="onDragOver(event,'action')" ondrop="onDrop(event,'action')" ondragleave="onDragLeave(event)">
+    <div class="col-header"><span>🎯 Action</span><span class="col-count" id="cnt-action">0</span></div>
+    <div class="col-body" id="body-action"></div>
+  </div>
   <div class="column" id="col-done" ondragover="onDragOver(event,'done')" ondrop="onDrop(event,'done')" ondragleave="onDragLeave(event)">
     <div class="col-header"><span>✅ Done</span><span class="col-count" id="cnt-done">0</span></div>
     <div class="col-body" id="body-done"></div>
@@ -112,7 +116,7 @@
       </div>
       <div class="modal-row">
         <div class="modal-section"><label>Status</label>
-          <select id="fStatus"><option value="backlog">Backlog</option><option value="in_progress">In Progress</option><option value="done">Done</option></select>
+          <select id="fStatus"><option value="backlog">Backlog</option><option value="in_progress">In Progress</option><option value="action">Action</option><option value="done">Done</option></select>
         </div>
         <div class="modal-section"><label>Source</label><input type="text" id="fSource" placeholder="Slack, Email, Manual..."></div>
       </div>

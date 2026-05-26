@@ -88,6 +88,7 @@
         <select id="nfStatus">
           <option value="backlog">Backlog</option>
           <option value="in_progress">In Progress</option>
+          <option value="action">Action</option>
           <option value="review">Review</option>
           <option value="done">Done</option>
         </select>
@@ -154,7 +155,7 @@ function render() {
   const dismissed = getDismissed();
 
   const notifs = allTasks.filter(t =>
-    (t.status === 'backlog' || t.status === 'in_progress') &&
+    (t.status === 'backlog' || t.status === 'in_progress' || t.status === 'action') &&
     t.deadline &&
     (new Date(t.deadline).getTime() - now) <= sevenDays
   ).sort((a, b) => new Date(a.deadline) - new Date(b.deadline));

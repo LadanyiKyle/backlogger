@@ -123,7 +123,7 @@ function checkReminders() {
   // Exclude individually dismissed notifications
   const dismissed = getDismissedNotifs();
   const count = items.filter(i =>
-    (i.status === 'backlog' || i.status === 'in_progress') &&
+    (i.status === 'backlog' || i.status === 'in_progress' || i.status === 'action') &&
     i.deadline &&
     (new Date(i.deadline).getTime() - now) <= sevenDays &&
     !dismissed.includes(i.id)
@@ -176,7 +176,7 @@ function renderKanban() {
   renderSummaries();
 
   // Render standard columns
-  ['backlog','in_progress','done'].forEach(col => {
+  ['backlog','in_progress','action','done'].forEach(col => {
     let colItems = getFiltered().filter(i => i.status === col);
     // Smart sort: priority → deadline status → date
     if (col !== 'done') {
@@ -332,7 +332,7 @@ async function dismissReview(id) {
 
 // Enable reorder within columns (set up once)
 document.addEventListener('DOMContentLoaded', () => {
-  ['review','backlog','in_progress','done'].forEach(col => {
+  ['review','backlog','in_progress','action','done'].forEach(col => {
     const body = document.getElementById('body-' + col);
     body.addEventListener('dragover', e => {
       e.preventDefault();
@@ -365,6 +365,7 @@ function cardHTML(item) {
   let actions = '';
   if (item.status !== 'backlog') actions += `<button onclick="event.stopPropagation();moveCard('${item.id}','backlog')">← Backlog</button>`;
   if (item.status !== 'in_progress') actions += `<button onclick="event.stopPropagation();moveCard('${item.id}','in_progress')">⚡ Progress</button>`;
+  if (item.status !== 'action') actions += `<button onclick="event.stopPropagation();moveCard('${item.id}','action')">🎯 Action</button>`;
   if (item.status !== 'done') actions += `<button onclick="event.stopPropagation();moveCard('${item.id}','done')">✓ Done</button>`;
   actions += `<button class="card-delete-btn" onclick="event.stopPropagation();deleteCardDirect('${item.id}')">🗑</button>`;
   const deadlineBadge = getDeadlineBadge(item);
@@ -857,8 +858,8 @@ function searchLinkedTasks() {
 function openLinkBrowser() {
   const overlay = document.getElementById('linkBrowserOverlay');
   const cols = document.getElementById('linkBrowserCols');
-  const statuses = ['backlog', 'in_progress', 'review', 'done'];
-  const labels = { backlog: '📋 Backlog', in_progress: '⚡ In Progress', review: '👁 Review', done: '✓ Done' };
+  const statuses = ['backlog', 'in_progress', 'action', 'review', 'done'];
+  const labels = { backlog: '📋 Backlog', in_progress: '⚡ In Progress', action: '🎯 Action', review: '👁 Review', done: '✓ Done' };
   const eligible = items.filter(i => i.id !== editingId && !currentLinkedTasks.includes(i.id));
 
   cols.innerHTML = statuses.map(s => {
