@@ -982,14 +982,40 @@ function getTaskDate(it) {
   return (it.deadline || it.created_at || '').substring(0, 10);
 }
 
-function calItemHTML(it) {
-  const cls = !it.deadline ? 'cal-item' : (new Date(it.deadline).getTime() < Date.now() ? 'cal-item cal-item-overdue' : 'cal-item cal-item-future');
-  return `<div class="${cls}" onclick="openModal('${it.id}')" title="${escHtml(it.title)}">${escHtml(it.title)}</div>`;
+function calItemHTML(it, expanded) {
+  const isOverdue = it.deadline && new Date(it.deadline).getTime() < Date.now();
+  const cls = !it.deadline ? 'cal-item' : (isOverdue ? 'cal-item cal-item-overdue' : 'cal-item cal-item-future');
+  if (!expanded) {
+    return `<div class="${cls}" onclick="openModal('${it.id}')" title="${escHtml(it.title)}">${escHtml(it.title)}</div>`;
+  }
+  const deadlineTime = it.deadline ? new Date(it.deadline).toLocaleTimeString('en-ZA', {hour:'2-digit',minute:'2-digit'}) : '';
+  const statusLabel = it.status ? it.status.replace('_',' ') : '';
+  const desc = it.description ? it.description.substring(0, 80) + (it.description.length > 80 ? '…' : '') : '';
+  return `<div class="${cls} cal-item-expanded" onclick="openModal('${it.id}')" title="${escHtml(it.title)}">
+    <div class="cal-item-title">${escHtml(it.title)}</div>
+    ${desc ? `<div class="cal-item-desc">${escHtml(desc)}</div>` : ''}
+    <div class="cal-item-meta">
+      ${it.category ? `<span class="badge badge-cat">${it.category}</span>` : ''}
+      ${it.priority ? `<span class="badge badge-priority-${it.priority}">${it.priority}</span>` : ''}
+      ${statusLabel ? `<span class="cal-item-status">${statusLabel}</span>` : ''}
+      ${deadlineTime ? `<span class="cal-item-time">⏰ ${deadlineTime}</span>` : ''}
+    </div>
+  </div>`;
 }
 
-function calOutlookItemHTML(e) {
+function calOutlookItemHTML(e, expanded) {
   const time = new Date(e.start_at).toLocaleTimeString('en-ZA', {hour:'2-digit',minute:'2-digit'});
-  return `<div class="cal-item cal-item-outlook" onclick="window.open('${e.web_link||'#'}','_blank')" title="${escHtml(e.subject)}">📅 ${time} ${escHtml(e.subject)}</div>`;
+  if (!expanded) {
+    return `<div class="cal-item cal-item-outlook" onclick="window.open('${e.web_link||'#'}','_blank')" title="${escHtml(e.subject)}">📅 ${time} ${escHtml(e.subject)}</div>`;
+  }
+  const endTime = new Date(e.end_at).toLocaleTimeString('en-ZA', {hour:'2-digit',minute:'2-digit'});
+  const attendeeCount = Array.isArray(e.attendees) ? e.attendees.length : 0;
+  return `<div class="cal-item cal-item-outlook cal-item-expanded" onclick="window.open('${e.web_link||'#'}','_blank')" title="${escHtml(e.subject)}">
+    <div class="cal-item-outlook-time">📅 ${time} – ${endTime}</div>
+    <div class="cal-item-title">${escHtml(e.subject)}</div>
+    ${e.location ? `<div class="cal-item-desc">📍 ${escHtml(e.location)}</div>` : ''}
+    ${attendeeCount > 1 ? `<div class="cal-item-desc">👥 ${attendeeCount} attendees</div>` : ''}
+  </div>`;
 }
 
 function renderCalMonth() {
@@ -1047,7 +1073,7 @@ function renderCalWeek() {
     const allWeekItems = [...dayOutlook.map(e => ({ _outlook: true, ...e })), ...dayItems];
     headerHTML += `<div class="cal-day-name${isToday?' cal-day-today':''}">${dayNames[i]} ${d.getDate()}</div>`;
     gridHTML += `<div class="cal-week-cell${isToday?' today':''}">
-      ${allWeekItems.map(it => it._outlook ? calOutlookItemHTML(it) : calItemHTML(it)).join('')}
+      ${allWeekItems.map(it => it._outlook ? calOutlookItemHTML(it, true) : calItemHTML(it, true)).join('')}
       ${!allWeekItems.length ? '<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px 0">—</div>' : ''}
     </div>`;
   }
