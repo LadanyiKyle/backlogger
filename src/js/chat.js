@@ -1,8 +1,8 @@
 // ── BackLogger AI Chat — Grok-3-mini ────────────────────────────────────────
 
-// Set your xAI Grok API key in config.js (see config.example.js — not committed to git)
-const GROK_KEY = window.BACKLOGGER_CONFIG && window.BACKLOGGER_CONFIG.grokKey ? window.BACKLOGGER_CONFIG.grokKey : '';
-const GROK_URL = 'https://api.x.ai/v1/chat/completions';
+// API key is no longer used in the browser — requests go through the Vercel proxy
+const GROK_KEY = '';
+const GROK_URL = 'https://backlogger.vercel.app/api/chat';
 const GROK_MODEL = 'grok-3-mini';
 
 let chatHistory = [];
@@ -283,8 +283,7 @@ To update a task status:
     const res = await fetch(GROK_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROK_KEY}`
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: GROK_MODEL,
