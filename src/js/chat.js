@@ -2,7 +2,7 @@
 
 // API key is no longer used in the browser — requests go through the Vercel proxy
 const GROK_KEY = '';
-const GROK_URL = 'https://backlogger.vercel.app/api/chat';
+const GROK_URL = 'https://backlogger-8lntst0eh-kyleit.vercel.app/api/chat';
 const GROK_MODEL = 'grok-3-mini';
 
 let chatHistory = [];
