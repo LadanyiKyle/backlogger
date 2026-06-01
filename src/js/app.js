@@ -1269,10 +1269,10 @@ async function expandSummary(id) {
 
   // Find tasks created within 10 minutes of this summary from scan sources
   const summaryTime = new Date(s.created_at);
-  const windowStart = new Date(summaryTime.getTime() - 10 * 60 * 1000).toISOString();
-  const windowEnd = new Date(summaryTime.getTime() + 10 * 60 * 1000).toISOString();
+  const windowStart = new Date(summaryTime.getTime() - 30 * 60 * 1000).toISOString();
+  const windowEnd = new Date(summaryTime.getTime() + 30 * 60 * 1000).toISOString();
   const scanTasks = await sbRead('tasks',
-    `select=id,title&source=in.(Slack Scan,Outlook Scan)&created_at=gte.${windowStart}&created_at=lte.${windowEnd}&order=created_at.asc`
+    `select=id,title&source=in.(Slack%20Scan,Outlook%20Scan)&created_at=gte.${windowStart}&created_at=lte.${windowEnd}&order=created_at.asc`
   );
 
   const taskLinksEl = document.getElementById('summaryTaskLinks');
