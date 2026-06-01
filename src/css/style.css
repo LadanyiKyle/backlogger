@@ -129,6 +129,8 @@ details[open] .expand-toggle::before { content: '▾ '; }
 .summary-card:hover .summary-promote-btn { opacity: 1; }
 .summary-promote-btn:hover { color: var(--accent) !important; border-color: var(--accent) !important; }
 .badge-scan { background: rgba(139,92,246,0.2); color: #c4b5fd; text-transform: capitalize; }
+.summary-task-link { display:block; font-size:12px; color:var(--accent); text-decoration:none; padding:3px 6px; border-radius:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+.summary-task-link:hover { background:rgba(99,102,241,0.12); text-decoration:underline; }
 .badge-tag { background: rgba(99,102,241,0.12); color: #a5b4fc; font-size: 10px; padding: 2px 6px; }
 .card-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
 .card-title-row .card-title { flex: 1; margin-bottom: 0; }

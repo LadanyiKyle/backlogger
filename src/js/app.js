@@ -1242,7 +1242,7 @@ function startPolling() {
 
 function escAttr(s) { return String(s||'').replace(/'/g,'&#39;').replace(/"/g,'&quot;'); }
 
-function expandSummary(id) {
+async function expandSummary(id) {
   const s = summaries.find(x => x.id === id);
   if (!s) return;
   const time = s.created_at ? new Date(s.created_at).toLocaleString('en-ZA', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
@@ -1250,18 +1250,51 @@ function expandSummary(id) {
   const scanType = s.scan_type || 'scan';
 
   document.getElementById('summaryExpandTitle').textContent = (source ? source + ' • ' : '') + scanType;
+  document.getElementById('summaryExpandOverlay').style.display = 'flex';
+
+  // Render immediately with loading placeholder for tasks
   document.getElementById('summaryExpandBody').innerHTML = `
     <div style="margin-bottom:16px">
       <div style="color:var(--muted);font-size:12px;margin-bottom:8px">${time}</div>
       <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word">${escHtml(s.content || '')}</div>
     </div>
-    ${s.tasks_added ? `<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:6px;font-size:13px">✓ <strong>${s.tasks_added} task${s.tasks_added===1?'':'s'} created</strong> from this summary</div>` : ''}
+    <div id="summaryTaskLinks" style="margin-top:12px">${s.tasks_added ? `<div style="color:var(--muted);font-size:12px">Loading tasks…</div>` : ''}</div>
     <div style="display:flex;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
       <button class="review-approve-btn" style="padding:6px 12px;border-radius:6px;border:1px solid var(--green);background:transparent;cursor:pointer;font-size:12px" onclick="markSummaryRead('${escAttr(s.id)}');closeSummaryExpand()">✓ Mark as Read</button>
       <button style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px" onclick="promoteToTask('${escAttr(s.id)}')">→ Create Task</button>
     </div>
   `;
-  document.getElementById('summaryExpandOverlay').style.display = 'flex';
+
+  if (!s.tasks_added) return;
+
+  // Find tasks created within 10 minutes of this summary from scan sources
+  const summaryTime = new Date(s.created_at);
+  const windowStart = new Date(summaryTime.getTime() - 10 * 60 * 1000).toISOString();
+  const windowEnd = new Date(summaryTime.getTime() + 10 * 60 * 1000).toISOString();
+  const scanTasks = await sbRead('tasks',
+    `select=id,title&source=in.(Slack Scan,Outlook Scan)&created_at=gte.${windowStart}&created_at=lte.${windowEnd}&order=created_at.asc`
+  );
+
+  const taskLinksEl = document.getElementById('summaryTaskLinks');
+  if (!taskLinksEl) return;
+
+  if (scanTasks && scanTasks.length) {
+    // Assign _seq display numbers matching what the board shows
+    const allSorted = [...items].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+    const seqMap = {};
+    allSorted.forEach((it, i) => { seqMap[it.id] = String(i + 1).padStart(3, '0'); });
+
+    const links = scanTasks.map(t => {
+      const seq = seqMap[t.id] || '???';
+      return `<a class="summary-task-link" onclick="closeSummaryExpand();openModal('${escAttr(t.id)}')" href="#">#${seq} ${escHtml(t.title)}</a>`;
+    }).join('');
+    taskLinksEl.innerHTML = `<div style="padding:10px;background:var(--surface2);border-radius:6px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">✓ <strong>${scanTasks.length} task${scanTasks.length===1?'':'s'} created</strong> from this summary</div>
+      <div style="display:flex;flex-direction:column;gap:4px">${links}</div>
+    </div>`;
+  } else {
+    taskLinksEl.innerHTML = `<div style="padding:10px;background:var(--surface2);border-radius:6px;font-size:13px">✓ <strong>${s.tasks_added} task${s.tasks_added===1?'':'s'} created</strong> from this summary</div>`;
+  }
 }
 
 function closeSummaryExpand() {
