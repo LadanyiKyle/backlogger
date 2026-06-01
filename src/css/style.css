@@ -70,8 +70,15 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .sec-divider { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .sec-label { font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
 .comment { background: var(--surface2); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
-.comment-meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.comment-meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .comment-body { font-size: 13px; line-height: 1.5; }
+.comment-dur { background: rgba(99,102,241,0.15); color: var(--accent); border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: 600; }
+.comment-actions { margin-left: auto; display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
+.comment:hover .comment-actions { opacity: 1; }
+.comment-btn { background: none; border: none; cursor: pointer; padding: 2px 4px; border-radius: 4px; font-size: 12px; line-height: 1; color: var(--muted); }
+.comment-btn:hover { background: var(--surface); }
+.comment-btn-del:hover { color: var(--orange); }
+.comment-edit-input { width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--accent); background: var(--surface); color: var(--text); font-size: 13px; resize: vertical; min-height: 60px; box-sizing: border-box; }
 .input-row { display: flex; gap: 8px; margin-top: 4px; }
 .input-row input { flex: 1; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; }
 .input-row button { padding: 8px 14px; border-radius: 6px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-size: 13px; }

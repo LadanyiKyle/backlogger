@@ -505,7 +505,7 @@ async function openModal(id) {
     ['commentsSection','timelogSection','activitySection','attachmentsSection','logPostSection','linkedTasksSection'].forEach(s => document.getElementById(s).style.display = 'flex');
     renderDeadlineDisplay(item);
     const [comments, timelogs, activity, attachments] = await Promise.all([
-      sbRead('comments', `task_id=eq.${id}&order=created_at.asc`),
+      sbRead('comments', `select=id,task_id,body,author,duration_minutes,created_at&task_id=eq.${id}&order=created_at.asc`),
       sbRead('time_logs', `task_id=eq.${id}&order=started_at.asc`),
       sbRead('activity', `task_id=eq.${id}&order=created_at.desc&limit=20`),
       sbRead('attachments', `task_id=eq.${id}&order=created_at.asc`)
@@ -670,14 +670,80 @@ function renderComments() {
     el.innerHTML = '<div style="color:var(--muted);font-size:12px">No comments yet</div>';
     return;
   }
-  const entries = currentComments.map(c =>
-    `<div class="comment"><div class="comment-meta">${c.author||'Kyle'} · ${timeAgo(c.created_at)}</div><div class="comment-body">${escHtml(c.body)}</div></div>`
-  );
+  const entries = currentComments.map(c => {
+    const durBadge = c.duration_minutes ? `<span class="comment-dur">⏱ ${formatDuration(c.duration_minutes)}</span>` : '';
+    return `<div class="comment" id="comment-${c.id}">
+      <div class="comment-meta">
+        ${c.author||'Kyle'} · ${timeAgo(c.created_at)}${durBadge}
+        <span class="comment-actions">
+          <button class="comment-btn" onclick="editComment('${c.id}')" title="Edit">✏️</button>
+          <button class="comment-btn comment-btn-del" onclick="deleteComment('${c.id}')" title="Delete">🗑</button>
+        </span>
+      </div>
+      <div class="comment-body" id="comment-body-${c.id}">${escHtml(c.body)}</div>
+    </div>`;
+  });
   if (entries.length <= 1) {
     el.innerHTML = entries.join('');
   } else {
     el.innerHTML = entries[entries.length - 1] + `<details class="expand-section"><summary class="expand-toggle">Show ${entries.length - 1} more</summary><div>${entries.slice(0, -1).reverse().join('')}</div></details>`;
   }
+}
+
+function editComment(id) {
+  const c = currentComments.find(c => c.id === id);
+  if (!c) return;
+  const bodyEl = document.getElementById('comment-body-' + id);
+  if (!bodyEl) return;
+  // Already in edit mode
+  if (bodyEl.querySelector('textarea')) return;
+  const original = c.body;
+  bodyEl.innerHTML = `
+    <textarea class="comment-edit-input">${escHtml(original)}</textarea>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button class="btn-sm btn-primary" onclick="saveCommentEdit('${id}')">Save</button>
+      <button class="btn-sm" onclick="cancelCommentEdit('${id}','${escHtml(original).replace(/'/g,"\\'")}')">Cancel</button>
+    </div>`;
+}
+
+function cancelCommentEdit(id, original) {
+  const bodyEl = document.getElementById('comment-body-' + id);
+  if (bodyEl) bodyEl.innerHTML = escHtml(original);
+}
+
+async function saveCommentEdit(id) {
+  const bodyEl = document.getElementById('comment-body-' + id);
+  if (!bodyEl) return;
+  const ta = bodyEl.querySelector('textarea');
+  if (!ta) return;
+  const newBody = ta.value.trim();
+  if (!newBody) return;
+  try {
+    await sbWrite('comments', 'PATCH', id, { body: newBody, updated_at: new Date().toISOString() });
+    const c = currentComments.find(c => c.id === id);
+    if (c) c.body = newBody;
+    if (editingId && latestComments[editingId]) latestComments[editingId] = newBody;
+    renderComments();
+    setStatus('✓ comment updated', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { alert('Failed to update comment: ' + e.message); }
+}
+
+async function deleteComment(id) {
+  if (!confirm('Delete this comment?')) return;
+  try {
+    await fetch(`${SB_URL}/rest/v1/comments?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+    });
+    currentComments = currentComments.filter(c => c.id !== id);
+    // Update latestComments for the card preview
+    if (editingId) {
+      latestComments[editingId] = currentComments.length ? currentComments[currentComments.length - 1].body : null;
+    }
+    renderComments();
+    renderCurrent();
+    setStatus('✓ comment deleted', 'var(--green)'); setTimeout(() => setStatus('● live', 'var(--green)'), 1500);
+  } catch(e) { alert('Failed to delete comment: ' + e.message); }
 }
 
 // addComment() removed — comments are now posted via logAndPost() in the unified Log & Post section
@@ -699,8 +765,11 @@ async function logAndPost() {
       renderTimeLogs();
     }
     if (comment) {
-      const result = await sbWrite('comments', 'POST', null, { task_id: editingId, body: comment, author: 'Kyle' });
+      const commentPayload = { task_id: editingId, body: comment, author: 'Kyle' };
+      if (minutes > 0) commentPayload.duration_minutes = minutes;
+      const result = await sbWrite('comments', 'POST', null, commentPayload);
       if (result && result[0]) currentComments.push(result[0]);
+      else currentComments.push({ ...commentPayload, id: 'tmp' + Date.now(), created_at: new Date().toISOString() });
       latestComments[editingId] = comment;
       logActivity(editingId, 'commented', comment.substring(0, 60));
       renderComments();
